@@ -1,5 +1,5 @@
-## Chat_Basics
-This repo covers Basic Models for Dialogue Generation Task.
+## Sum_Basics
+This repo covers Basic Models for Abstractive Text Summarization Task.
 The main purpose is to check the developments while comparing each model.
 For a fairer comparision, some modifications are applied and as a result, some parts may differ from those in papers.
 
@@ -98,7 +98,7 @@ But the Transformer solved these problems only with Attentions. As a result, the
 * **Optimizer:** Adam Optimizer
 * **Tokenization:** BPE Tokenziation
 * **Loss Function:** Cross Entropy Loss
-* **Data:** [Downsized Single-Turn Daily Dialogue Dataset](https://github.com/moon23k/NLP_datasets#dialogue)
+* **Data:** Downsized CNN_Daily Mail Dataset
 * Applied Different Initialization for Each Models
 
 <br>
