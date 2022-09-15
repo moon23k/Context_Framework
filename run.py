@@ -29,7 +29,8 @@ class Config(object):
 
         self.task = args.task
         self.model_name = args.model
-        
+        self.scheduler = args.scheduler
+
         self.unk_idx = 0
         self.pad_idx = 1
         self.bos_idx = 2
@@ -39,24 +40,17 @@ class Config(object):
         self.n_epochs = 1
         self.batch_size = 128
 
-        if self.task != 'train':
-            self.ckpt = f'ckpt/{self.model_name}.pt'
+        if self.model_name == 'transformer':
+            self.learning_rate = 1e-4
+        else:
+            self.learning_rate = 1e-3
 
-        if self.task == 'train':
-            self.optimizer = optim.Adam(self.model.parameters(), lr=self.learning_rate)
-            if self.scheduler == 'constant':
-                self.learning_rate = 1e-3
-                self.scheduler = None
-            elif self.scheduler == 'noam':
-                self.learning_rate = 1e-3
-                self.scheduler = optim.lr_scheduler()
 
         if self.task == 'inference':
             self.device = torch.device('cpu')
         else:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.criterion = nn.CrossEntropyLoss(ignore_index=self.pad_idx, label_smoothing=0.1).to(self.device)
 
     def print_attr(self):
         for attribute, value in self.__dict__.items():
@@ -105,7 +99,7 @@ def main(config):
     if config.task == 'train':
         train_dataloader = load_dataloader(config, 'train')
         valid_dataloader = load_dataloader(config, 'valid')        
-        trainer = Trainer(model, config, train_dataloader, valid_dataloader)
+        trainer = Trainer(config, model, train_dataloader, valid_dataloader)
         trainer.train()
     
     elif config.task == 'test':

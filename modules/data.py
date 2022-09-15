@@ -20,11 +20,11 @@ class NMTDataset(Dataset):
         return len(self.data)
     
     def __getitem__(self, idx):
-        src = self.data[idx]['src_ids']
+        src = self.data[idx]['src']
         if self.model_name == 'transformer':
-            trg = self.data[idx]['trg_ids'][:-1]
+            trg = self.data[idx]['trg'][:-1]
         else:
-            trg = self.data[idx]['trg_ids']
+            trg = self.data[idx]['trg']
         return src, trg 
 
 

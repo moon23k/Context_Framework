@@ -19,7 +19,7 @@ class TokenEmbedding(nn.Module):
 
 
 class PosEncoding(nn.Module):
-    def __init__(self, config, max_len=512):
+    def __init__(self, config, max_len=3000):
         super(PosEncoding, self).__init__()
         pe = torch.zeros(max_len, config.emb_dim)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
