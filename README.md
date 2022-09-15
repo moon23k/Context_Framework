@@ -2,11 +2,12 @@
 This repo covers Basic Models for Abstractive Text Summarization Task.
 The main purpose is to check the developments while comparing each model.
 For a fairer comparision, some modifications are applied and as a result, some parts may differ from those in papers.
+Compared to other tasks, summarization data is long. Therefore, the main purpose is to identify and compare the ability of basic models to handle long sentences.
 
 <br>
 
 ### Table of Contents
-> **[Model desc](#model-desc)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[Configurations](#configurations)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[How to Use](#how-to-use)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[Results](#results)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[References](#references)**
+> **[Model desc](#model-desc)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[Configurations](#configurations)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[Results](#results)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[How to Use](#how-to-use)** &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; **[References](#references)**
 </br>
 </br>
 
@@ -76,6 +77,14 @@ But the Transformer solved these problems only with Attentions. As a result, the
   <img src="https://user-images.githubusercontent.com/71929682/168110116-374d3ac9-48d6-41e3-a2ce-d216f2e76422.png" width="80%" height="60%">
 </center>
 
+<br>
+<br>
+
+## Results
+
+<center>
+  <img src="https://user-images.githubusercontent.com/71929682/188311738-ec98d7c4-f10c-4b5d-aa8a-c538c58d974b.png" width="90%" height="70%">
+</center>
 
 <br>
 <br>
@@ -114,18 +123,6 @@ python3 test.py -model ['seq2seq', 'attention', 'transformer']
 ```
 python3 inference.py -model ['seq2seq', 'attention', 'transformer']
 ```
-
-<br>
-<br>
-
-
-## Results
-
-<center>
-  <img src="https://user-images.githubusercontent.com/71929682/188311738-ec98d7c4-f10c-4b5d-aa8a-c538c58d974b.png" width="90%" height="70%">
-</center>
-
-<br>
 
 <br>
 <br>
