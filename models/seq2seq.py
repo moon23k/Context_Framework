@@ -47,11 +47,6 @@ class Seq2Seq(nn.Module):
         self.output_dim = config.output_dim
         self.encoder = Encoder(config)
         self.decoder = Decoder(config)
-        self.apply(self._init_weights)
-
-    def _init_weights(self, module):
-        if hasattr(module, 'weight') and module.weight.dim() > 1:
-            nn.init.uniform_(module.weight.data, -0.08, 0.08)
     
     def forward(self, src, trg, teacher_forcing_ratio=0.5):
         batch_size, max_len = trg.shape

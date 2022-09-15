@@ -38,7 +38,7 @@ class Config(object):
 
         self.clip = 1
         self.n_epochs = 1
-        self.batch_size = 128
+        self.batch_size = 16
 
         if self.model_name == 'transformer':
             self.learning_rate = 1e-4
@@ -77,19 +77,43 @@ def load_tokenizer(lang):
 
 
 
+def init_uniform(model):
+    for name, param in model.named_parameters():
+        nn.init.uniform_(param.data, -0.08, 0.08)
+
+
+
+def init_normal(model):
+    for name, param in model.named_parameters():
+        if 'weight' in name:
+            nn.init.normal_(param.data, mean=0, std=0.01)
+        else:
+            nn.init.constant_(param.data, 0)
+
+
+def init_xavier(model):
+    if hasattr(model, 'weight') and model.weight.dim() > 1:
+        nn.init.xavier_uniform_(model.weight.data)
+
+
+
 def load_model(config):
     if config.model_name == 'seq2seq':
         model = Seq2Seq(config)
+        model.apply(init_uniform)
     elif config.model_name == 'attention':
         model = Seq2SeqAttn(config)
+        model.apply(init_normal)
     elif config.model_name == 'transformer':
         model = Transformer(config)
-
+        model.apply(init_xavier)
+        
     if config.task != 'train':
         model_state = torch.load(config.ckpt_path, map_location=config.device)['model_state_dict']
         model.load_state_dict(model_state)
 
     return model.to(config.device)
+
 
 
 
