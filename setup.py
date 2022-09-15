@@ -16,10 +16,7 @@ def load_data():
 	with open('data/concat.txt', 'w') as f:
 		f.write(src_list + trg_list)
 
-	data = [{'src': src, 'trg': trg for src, trg in zip(src_list, trg_list)}]
-	train, valid, test = data[:-6000], data[-6000:-3000], data[-3000:]
-
-	return train, valid, test
+	return src_list, trg_list
 
 
 def build_vocab():
@@ -57,18 +54,19 @@ def load_tokenizer():
 	return tokenizer
 
 
+
 def main():
-	src, trg = load_data()
+	src_list, trg_list = load_data()
 	build_vocab()
 	tokenizer = load_tokenizer()
 	
-	tokenized_data = [{'src': tokenizer.EncodeAsIds(src), \
-					  'trg': tokenizer.EncodeAsIds(trg)}\
-					  for src, trg in zip(src, trg)]
+	tokenized_data = [{'src': tokenizer.EncodeAsIds(src),\
+  					   'trg': tokenizer.EncodeAsIds(trg)}\
+					   for src, trg in zip(src_list, trg_list)]
 
-	train, valid, test = tokenized_data[:-6000], tokenized_data[-6000:-3000], tokenized_data[-3000:]
-	train = train[::3] #downsize
-	save_json(train, 'train.json')
+	train, valid, test = tokenized_data[:-2000], tokenized_data[-2000:-1000], tokenized_data[-1000:]
+
+	save_json(train[::3], 'train.json') #downsize train dataset
 	save_json(valid, 'valid.json')
 	save_json(test, 'test.json')
 
