@@ -1,22 +1,22 @@
-import os, json, yaml, nltk 
+import os, json, yaml
 import sentencepiece as spm
 from datasets import load_dataset
 
 
 
 def load_data():
-	orig_data = load_dataset('cnn_dailymail', '3.0.0')
-	train, valid, test = orig_data['train'], orig_data['validation'], orig_data['test']
+    orig_data = load_dataset('cnn_dailymail', '3.0.0')
+    train, valid, test = orig_data['train'], orig_data['validation'], orig_data['test']
 	
-	src_list, trg_list = [], []
-	for split in [_train, _valid, _test]:
-	    src_list.extend(split['article'])
-	    trg_list.extend(split['highlights'])
+    src_list, trg_list = [], []
+    for split in [train, valid, test]:
+        src_list.extend(split['article'])
+        trg_list.extend(split['highlights'])
 
-	with open('data/concat.txt', 'w') as f:
-		f.write(src_list + trg_list)
+    with open('data/concat.txt', 'w') as f:
+        f.write('\n'.join(src_list + trg_list))
 
-	return src_list, trg_list
+    return src_list, trg_list
 
 
 def build_vocab():
@@ -50,27 +50,34 @@ def load_tokenizer():
     tokenizer = spm.SentencePieceProcessor()
     tokenizer.load('data/tokenizer.model')
     tokenizer.SetEncodeExtraOptions('bos:eos')
-
-	return tokenizer
+    
+    return tokenizer
 
 
 
 def main():
-	src_list, trg_list = load_data()
-	build_vocab()
-	tokenizer = load_tokenizer()
-	
-	tokenized_data = [{'src': tokenizer.EncodeAsIds(src),\
-  					   'trg': tokenizer.EncodeAsIds(trg)}\
-					   for src, trg in zip(src_list, trg_list)]
+    src_list, trg_list = load_data()
+    print('load dataset completed\n')
+    build_vocab()
+    print('build vocab completed\n')
+    tokenizer = load_tokenizer()
+    print('load tokenizer completed\n')
 
-	train, valid, test = tokenized_data[:-2000], tokenized_data[-2000:-1000], tokenized_data[-1000:]
+    tokenized_data = [{'src': tokenizer.EncodeAsIds(src),\
+                        'trg': tokenizer.EncodeAsIds(trg)}\
+                        for src, trg in zip(src_list, trg_list)]
+    print('tokenize data completed\n')
 
-	save_json(train[::3], 'train.json') #downsize train dataset
-	save_json(valid, 'valid.json')
-	save_json(test, 'test.json')
+    train, valid, test = tokenized_data[:-2000], tokenized_data[-2000:-1000], tokenized_data[-1000:]
+    print(f'train_len: {len(train)} valid_len: {len(valid)}, test_len: {len(test)}')
+    save_json(train[::3], 'train.json') #downsize train dataset
+    save_json(valid, 'valid.json')
+    save_json(test, 'test.json')
 
 
 
-if __name__ == 'main':
-	main()
+if __name__ == '__main__':
+    main()
+    assert os.path.exists(f'data/train.json')
+    assert os.path.exists(f'data/valid.json')
+    assert os.path.exists(f'data/test.json')
