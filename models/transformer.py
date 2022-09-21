@@ -34,7 +34,7 @@ class PosEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        return self.pe[:x.size(1), :].detach()
+        return self.pe[:x.size(-1), :].detach()
 
 
 
@@ -66,25 +66,36 @@ class MultiHeadAttn(nn.Module):
 
     def forward(self, query, key, value, mask=None):
         batch_size = key.size(0)
-        Q, K, V = self.fc_q(query), self.fc_k(key), self.fc_v(value)
-        Q, K, V = self.split(Q), self.split(K), self.split(V)
+        local = True if key.dim() > 3 else False
 
-        out = self.attention(Q, K, V, mask)
-        out = out.permute(0, 2, 1, 3).contiguous().view(batch_size, -1, self.hidden_dim)
+        Q, K, V = self.fc_q(query), self.fc_k(key), self.fc_v(value)
+        Q, K, V = self.split(Q, local), self.split(K, local), self.split(V, local)
+        out = self.attention(Q, K, V, mask, local)
+
+        if local:
+            out = out.permute(0, 1, 3, 2, 4).contiguous().view(batch_size, key.size(1), -1, self.hidden_dim)
+        else:
+            out = out.permute(0, 2, 1, 3).contiguous().view(batch_size, -1, self.hidden_dim)
         return self.fc_out(out)
 
 
-    def attention(self, query, key, value, mask):
-        d_k = key.size(-1)        
-        score = torch.matmul(query, key.permute(0, 1, 3, 2)) / math.sqrt(d_k)
+    def attention(self, query, key, value, mask, local):
+        d_k = key.size(-1)
+        if local:
+            score = torch.matmul(query, key.permute(0, 1, 2, 4, 3)) / math.sqrt(d_k)
+        else:
+            score = torch.matmul(query, key.permute(0, 1, 3, 2)) / math.sqrt(d_k)
 
         if mask is not None:
             attn_score = score.masked_fill(mask==0, -1e9)
         prob = F.softmax(score, dim=-1)
         return torch.matmul(self.dropout(prob), value)
     
-    def split(self, x):
-        return x.view(x.size(0), -1, self.n_heads, self.head_dim).permute(0, 2, 1, 3)
+    def split(self, x, local):
+        x = x.view(*x.shape[:-1], self.n_heads, self.head_dim)
+        if local:
+            return x.permute(0, 1, 3, 2, 4)
+        return x.permute(0, 2, 1, 3)
 
 
 
@@ -143,14 +154,27 @@ class DecoderLayer(nn.Module):
 
 
 
-class Encoder(nn.Module):
+class TokEncoder(nn.Module):
     def __init__(self, config):
-        super(Encoder, self).__init__()
+        super(TokEncoder, self).__init__()
         self.embeddings = Embeddings(config)
         self.layers = get_clones(EncoderLayer(config), config.n_layers)
 
     def forward(self, src, src_mask):
         src = self.embeddings(src)
+        for layer in self.layers:
+            src = layer(src, src_mask)
+        return src
+
+
+class SeqEncoder(nn.Module):
+    def __init__(self, config):
+        super(SeqEncoder, self).__init__()
+        self.pos = PosEncoding(config)
+        self.layers = get_clones(EncoderLayer(config), config.n_layers)
+
+    def forward(self, src, src_mask):
+        src += self.pos(src)
         for layer in self.layers:
             src = layer(src, src_mask)
         return src
@@ -176,19 +200,35 @@ class Transformer(nn.Module):
         super(Transformer, self).__init__()
         self.device = config.device
         self.pad_idx = config.pad_idx
-        self.encoder = Encoder(config)
+        self.bos_idx = config.bos_idx
+
+        self.pos_encoder = PosEncoding(config)
+        self.tok_encoder = TokEncoder(config)
+        self.seq_encoder = SeqEncoder(config)
+
         self.decoder = Decoder(config)
         self.fc_out = nn.Linear(config.hidden_dim, config.output_dim)
 
+
     def forward(self, src, trg):
-        src_mask, trg_mask = self.pad_mask(src), self.dec_mask(trg)
-        enc_out = self.encoder(src, src_mask)
-        dec_out = self.decoder(trg, enc_out, src_mask, trg_mask)
+        src_tok_mask, src_seq_mask, trg_mask = self.pad_mask(src), self.dec_mask(trg)
+        tok_memory = self.tok_encoder(src, src_tok_mask)
+        seq_memory = self.seq_encoder(tok_memory, src_seq_mask)
+        
+        dec_out = self.decoder(trg, seq_memory, src_seq_mask, trg_mask)
         return self.fc_out(dec_out)
+
     
     def pad_mask(self, x):
-        return (x != self.pad_idx).unsqueeze(1).unsqueeze(2).to(self.device)
-    
+        tok_mask = (x != self.pad_idx).unsqueeze(1).unsqueeze(2).to(self.device)
+        
+        if x.dim() != 3:
+            return tok_mask
+        elif x.dim() == 3:
+            seq_mask = (x[:,:,0] == self.bos_idx).unsqueeze(1).unsqueeze(2).to(self.device)
+            return tok_mask, seq_mask
+        
+
     def dec_mask(self, x):
         pad_mask = self.pad_mask(x)
         sub_mask = torch.tril(torch.ones((x.size(-1), x.size(-1)))).bool().to(self.device)

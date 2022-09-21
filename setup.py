@@ -1,4 +1,4 @@
-import os, json, yaml, nltk
+import os, re, json, yaml, nltk
 import sentencepiece as spm
 from datasets import load_dataset
 
@@ -10,8 +10,15 @@ def filter_data(orig_data, min_len=500, max_len=3000):
     src_list, trg_list = [], []
     for split in [train, valid, test]:
         for elem in split:
-            if min_len < len(elem['article']) < max_len:
-                src, trg = elem['article'], elem['highlights']
+            src, trg = elem['article'], elem['highlights']
+            src_condition = min_len < len(src) < max_len
+            trg_condition = len(trg) < min_len
+            
+            if src_condition & trg_condition:
+                _src = nltk.tokenize.sent_tokenize(src)
+                for sent in _src:
+                    if len(sent) > min_len:
+                        continue
 
                 trg = re.sub(r'\n', ' ', trg)                 #remove \n
                 trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
