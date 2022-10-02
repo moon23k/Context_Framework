@@ -16,15 +16,17 @@ def filter_data(orig_data, min_len=500, max_len=3000):
             
             if src_condition & trg_condition:
                 _src = nltk.tokenize.sent_tokenize(src)
+                n_sent = len(_src)
                 for sent in _src:
-                    if len(sent) > min_len:
-                        continue
+                    if len(sent) < min_len:
+                        n_sent -= 1
 
-                trg = re.sub(r'\n', ' ', trg)                 #remove \n
-                trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
+                if not n_sent:
+                    trg = re.sub(r'\n', ' ', trg)                 #remove \n
+                    trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
 
-                src_list.append(src)
-                trg_list.append(trg)
+                    src_list.append(src)
+                    trg_list.append(trg)
 
     with open('data/concat.txt', 'w') as f:
         f.write('\n'.join(src_list + trg_list))

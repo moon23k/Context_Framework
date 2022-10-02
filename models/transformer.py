@@ -33,7 +33,9 @@ class PosEncoding(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
 
-    def forward(self, x):
+    def forward(self, x, seq_level=False):
+        if seq_level:
+            return self.pe[:x.size(-2), :].detach()    
         return self.pe[:x.size(-1), :].detach()
 
 
@@ -66,7 +68,7 @@ class MultiHeadAttn(nn.Module):
 
     def forward(self, query, key, value, mask=None):
         batch_size = key.size(0)
-        local = True if key.dim() > 3 else False
+        local = True if key.dim() == 4 else False
 
         Q, K, V = self.fc_q(query), self.fc_k(key), self.fc_v(value)
         Q, K, V = self.split(Q, local), self.split(K, local), self.split(V, local)
@@ -95,7 +97,8 @@ class MultiHeadAttn(nn.Module):
         x = x.view(*x.shape[:-1], self.n_heads, self.head_dim)
         if local:
             return x.permute(0, 1, 3, 2, 4)
-        return x.permute(0, 2, 1, 3)
+        else:
+            return x.permute(0, 2, 1, 3)
 
 
 
@@ -174,7 +177,7 @@ class SeqEncoder(nn.Module):
         self.layers = get_clones(EncoderLayer(config), config.n_layers)
 
     def forward(self, src, src_mask):
-        src += self.pos(src)
+        src += self.pos(src, True)
         for layer in self.layers:
             src = layer(src, src_mask)
         return src
@@ -211,16 +214,17 @@ class Transformer(nn.Module):
 
 
     def forward(self, src, trg):
-        src_tok_mask, src_seq_mask, trg_mask = self.pad_mask(src), self.dec_mask(trg)
+        src_tok_mask, src_seq_mask = self.pad_mask(src) 
+        trg_mask = self.dec_mask(trg)
         tok_memory = self.tok_encoder(src, src_tok_mask)
-        seq_memory = self.seq_encoder(tok_memory, src_seq_mask)
+        seq_memory = self.seq_encoder(tok_memory[:, :, 0, :], src_seq_mask)
         
         dec_out = self.decoder(trg, seq_memory, src_seq_mask, trg_mask)
         return self.fc_out(dec_out)
 
     
     def pad_mask(self, x):
-        tok_mask = (x != self.pad_idx).unsqueeze(1).unsqueeze(2).to(self.device)
+        tok_mask = (x != self.pad_idx).unsqueeze(-2).unsqueeze(-2).to(self.device)
         
         if x.dim() != 3:
             return tok_mask
