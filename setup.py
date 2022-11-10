@@ -1,6 +1,7 @@
 import os, re, json, yaml, nltk
 import sentencepiece as spm
 from datasets import load_dataset
+from run import load_tokenizer
 
 
 
@@ -42,12 +43,12 @@ def build_vocab():
         vocab_dict = yaml.load(f, Loader=yaml.FullLoader)
     
     opt = f"--input=data/concat.txt\
-            --model_prefix=data/tokenizer\
+            --model_prefix=data/spm\
             --vocab_size={vocab_dict['vocab_size']}\
             --character_coverage={vocab_dict['coverage']}\
             --model_type={vocab_dict['type']}\
-            --unk_id={vocab_dict['unk_id']} --unk_piece={vocab_dict['unk_piece']}\
             --pad_id={vocab_dict['pad_id']} --pad_piece={vocab_dict['pad_piece']}\
+            --unk_id={vocab_dict['unk_id']} --unk_piece={vocab_dict['unk_piece']}\
             --bos_id={vocab_dict['bos_id']} --bos_piece={vocab_dict['bos_piece']}\
             --eos_id={vocab_dict['eos_id']} --eos_piece={vocab_dict['eos_piece']}"
 
@@ -60,13 +61,6 @@ def save_json(data_obj, data_name):
     with open(f"data/{data_name}", 'w') as f:
         json.dump(data_obj, f)
 
-
-def load_tokenizer():
-    tokenizer = spm.SentencePieceProcessor()
-    tokenizer.load('data/tokenizer.model')
-    tokenizer.SetEncodeExtraOptions('bos:eos')
-    
-    return tokenizer
 
 
 def tokenize_data(src_list, trg_list, tokenizer):

@@ -157,9 +157,9 @@ class DecoderLayer(nn.Module):
 
 
 
-class TokEncoder(nn.Module):
+class SequenceEncoder(nn.Module):
     def __init__(self, config):
-        super(TokEncoder, self).__init__()
+        super(SequenceEncoder, self).__init__()
         self.embeddings = Embeddings(config)
         self.layers = get_clones(EncoderLayer(config), config.n_layers)
 
@@ -167,12 +167,12 @@ class TokEncoder(nn.Module):
         src = self.embeddings(src)
         for layer in self.layers:
             src = layer(src, src_mask)
-        return src
+        return src[:, :, 0, :]
 
 
-class SeqEncoder(nn.Module):
+class ContextEncoder(nn.Module):
     def __init__(self, config):
-        super(SeqEncoder, self).__init__()
+        super(ContextEncoder, self).__init__()
         self.pos = PosEncoding(config)
         self.layers = get_clones(EncoderLayer(config), config.n_layers)
 
@@ -206,8 +206,8 @@ class Transformer(nn.Module):
         self.bos_idx = config.bos_idx
 
         self.pos_encoder = PosEncoding(config)
-        self.tok_encoder = TokEncoder(config)
-        self.seq_encoder = SeqEncoder(config)
+        self.seq_encoder = SequenceEncoder(config)
+        self.con_encoder = ContextEncoder(config)
 
         self.decoder = Decoder(config)
         self.fc_out = nn.Linear(config.hidden_dim, config.output_dim)
@@ -216,8 +216,8 @@ class Transformer(nn.Module):
     def forward(self, src, trg):
         src_tok_mask, src_seq_mask = self.pad_mask(src) 
         trg_mask = self.dec_mask(trg)
-        tok_memory = self.tok_encoder(src, src_tok_mask)
-        seq_memory = self.seq_encoder(tok_memory[:, :, 0, :], src_seq_mask)
+        seq_memory = self.tok_encoder(src, src_tok_mask)
+        con_memory = self.seq_encoder(seq_memory, src_seq_mask)
         
         dec_out = self.decoder(trg, seq_memory, src_seq_mask, trg_mask)
         return self.fc_out(dec_out)

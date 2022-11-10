@@ -39,12 +39,8 @@ class Config(object):
         self.clip = 1
         self.n_epochs = 1
         self.batch_size = 16
-
-        if self.model_name == 'transformer':
-            self.learning_rate = 1e-4
-        else:
-            self.learning_rate = 1e-3
-
+        self.learning_rate = 5e-4
+        self.ckpt = f"ckpt/{self.model_name}.pt"
 
         if self.task == 'inference':
             self.device = torch.device('cpu')

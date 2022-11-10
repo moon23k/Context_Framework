@@ -8,20 +8,35 @@ import torch.nn.functional as F
 class Encoder(nn.Module):
     def __init__(self, config):
         super(Encoder, self).__init__()
-        self.embedding = nn.Embedding(config.input_dim, config.emb_dim)
-        self.rnn = nn.GRU(config.emb_dim, config.hidden_dim, bidirectional=True, batch_first=True)
-        self.fc = nn.Linear(config.hidden_dim * 2, config.hidden_dim)
+        self.hidden_dim = config.hidden_dim
+
         self.dropout = nn.Dropout(config.dropout_ratio)
-
-    def forward(self, src):
-        embedded = self.dropout(self.embedding(src))
-        out, hidden = self.rnn(embedded)
+        self.embedding = nn.Embedding(config.input_dim, config.emb_dim)
         
-        hidden = torch.cat((hidden[-2, :, :], hidden[-1, :, :]), dim=1)
-        hidden = self.fc(hidden)
-        hidden = torch.tanh(hidden)
+        self.sequence_fc = nn.Linear(config.hidden_dim * 2, config.hidden_dim)
+        self.context_fc = nn.Linear(config.hidden_dim * 2, config.hidden_dim)
 
-        return out, hidden
+        self.sequence_rnn = nn.GRU(config.emb_dim, config.hidden_dim, bidirectional=True, batch_first=True)
+        self.context_rnn = nn.GRU(config.hidden_dim, config.hidden_dim, bidirectional=True, batch_first=True)
+        
+
+    def forward(self, x):
+        batch_size, seq_num, seq_len = x.shape
+        seq_hiddens = torch.empty(seq_num, batch_size, self.hidden_dim)        
+        
+        x = self.dropout(self.embedding(x))
+        for i in range(seq_num):
+            _, seq_hidden = self.sequence_rnn(x[:, i, :, :])
+            seq_hidden = torch.cat((seq_hidden[0], seq_hidden[1]), dim=1)
+            seq_hidden = torch.tanh(self.sequence_fc(seq_hidden))
+            seq_hiddens[i] = seq_hidden
+
+        out, con_hidden = self.context_rnn(seq_hiddens)
+        con_hidden = torch.cat((hidden[0], hidden[1]), dim=1)
+        con_hidden = torch.tanh(self.context_fc(hidden))
+
+        return out, con_hidden
+
 
 
 
@@ -33,7 +48,7 @@ class Attention(nn.Module):
 
 
     def forward(self, hidden, enc_out):
-        batch_size, src_len = enc_out.shape[0], enc_out.shape[1]
+        batch_size, src_len, _ = enc_out.shape
         
         hidden = hidden.unsqueeze(1).repeat(1, src_len, 1)
         

@@ -5,18 +5,40 @@ import torch.nn as nn
 class Encoder(nn.Module):
     def __init__(self, config):
         super(Encoder, self).__init__()
-        self.embedding = nn.Embedding(config.input_dim, config.emb_dim)
-        self.rnn = nn.LSTM(config.emb_dim, 
-                           config.hidden_dim, 
-                           config.n_layers, 
-                           batch_first=True, 
-                           dropout=config.dropout_ratio)
+        self.hidden_dim = config.hidden_dim
+
         self.dropout = nn.Dropout(config.dropout_ratio)
+        self.embedding = nn.Embedding(config.input_dim, config.emb_dim)
+        
+        self.sequence_rnn = nn.LSTM(config.emb_dim,
+                                    config.hidden_dim,
+                                    config.n_layers,
+                                    batch_first=True,
+                                    dropout=config.dropout_ratio)
+        
+        self.context_rnn = nn.LSTM(config.hidden_dim,
+                                   config.hidden_dim,
+                                   config.n_layers,
+                                   batch_first=True,
+                                   dropout=config.dropout_ratio)        
     
     def forward(self, x):
-        x = self.dropout(self.embedding(x)) 
-        _, hiddens = self.rnn(x)
-        return hiddens
+        batch_size, seq_num, seq_len, _ = x.shape
+        seq_hiddens = torch.empty(seq_num, batch_size, self.hidden_dim) 
+        seq_cells = torch.empty(seq_num, batch_size, self.hidden_dim)
+
+        x = self.dropout(self.embedding(x))
+        
+        for i in range(seq_num):
+            _, hidden, cell = self.rnn(:, i, :, :)
+            seq_hiddens[i] = hidden.squeeze(0)
+            seq_cells[i] = cell.squeeze(0)
+
+        _, con_hiddens = self.context_rnn(hiddens.permute(1, 0, 2), 
+                                          cells.permute(1, 0, 2))
+        
+        return con_hiddens
+
 
 
 class Decoder(nn.Module):
