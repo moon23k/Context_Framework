@@ -1,38 +1,31 @@
-import torch
+from modules.search import RNNSearch, TransSearch
 
 
 
-class Translator:
-	def __init__(self, config, model, src_tokenizer, trg_tokenizer):
-		self.model = model
-		self.max_len = 100
-		self.device = config.device
-		self.search = config.search
-		self.bos_idx = config.bos_idx
-		self.src_tokenizer = src_tokenizer
-		self.trg_tokenizer = trg_tokenizer
-		self.model_name == config.model_name
+class Summarizer:
+    def __init__(self, config, model, tokenizer):
+        self.model = model
+        self.model_name = config.model_name
+        self.search_method = config.search_method
 
-	
-	def tranaslate(self, config):
-		self.model.eval()
-		print('Type "quit" to terminate Translation')
-		while True:
-			user_input = input('please type text >> ')
-			if user_input == 'quit':
-				print('--- Terminate the Translation ---')
-				print('-' * 30)
-				break
+        if config.model_name != 'transformer':
+            self.search = RNNSearch(config, model, tokenizer)
+        else:
+            self.search = TransSearch(config, model, tokenizer)
 
-			src = self.src_tokenizer.Encode(user_input)
-			src = torch.LongTensor(src).to(self.device)
-			pred_seq = torch.LongTensor([self.bos_idx]).to(self.device)
 
-			for t in range(self.max_len):
-				out = self.model(src, pred_seq)
-				pred_word = out.argmax(-1)
-				pred_seq = torch.cat([pred_seq, pred_word])
-
-			print(f"Original Sentence:   {user_input}")
-			print(f'Translated Sequenec: {self.trg_tokenizer.Decode(pred_seq)}\n')
-			
+    def summarize(self):
+        self.model.eval()
+        print(f'--- Summarization Started on {self.model_name} model! ---')
+        print('[ Type "quit" on user input to stop the Process ]')
+        
+        while True:
+            input_seq = input('\nUser Input sentence >> ')
+            if input_seq.lower() == 'quit':
+                print('\n--- Summarization has terminated! ---')
+                break        
+            if self.search_method == 'beam':
+                output_seq = self.search.beam_search(input_seq)
+            else:
+                output_seq = self.search.greedy_search(input_seq)
+            print(f"Summarized sentence >> {output_seq}")       

@@ -1,7 +1,7 @@
 import time, math, json, torch
 import torch.nn as nn
 import torch.optim as optim
-from collections import namedtuple, defaultdict
+
 
 
 class Trainer:
@@ -13,31 +13,19 @@ class Trainer:
         self.n_epochs = config.n_epochs
         self.output_dim = config.output_dim
         self.model_name = config.model_name
-
+        
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
 
-        self.criterion = nn.CrossEntropyLoss(ignore_index=config.pad_idx, label_smoothing=0.1).to(self.device)
+        self.criterion = nn.CrossEntropyLoss(ignore_index=config.pad_idx, 
+                                             label_smoothing=0.1).to(self.device)
         self.optimizer = optim.Adam(self.model.parameters(), 
                                     lr=config.learning_rate, 
                                     betas=(0.9, 0.98), 
                                     eps=1e-8)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min')
         
-        if config.scheduler == 'constant':
-            self.scheduler = None
-        elif config.scheduler == 'exp':
-            self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=0.95)
-        elif config.scheduler == 'cycle':
-            self.scheduler = optim.lr_scheduler.CyclicLR(self.optimizer,
-                                                         base_lr=1e-4, 
-                                                         max_lr=1e-3, 
-                                                         step_size_up=10, 
-                                                         step_size_down=None, 
-                                                         mode='exp_range', 
-                                                         gamma=0.97,
-                                                         cycle_momentum=False)
-        
-        self.ckpt_path = f'ckpt/{self.model_name}.pt'
+        self.ckpt_path = config.ckpt_path
         self.record_path = f"ckpt/{self.model_name}.json"
         self.record_keys = ['epoch', 'train_loss', 'train_ppl',
                             'valid_loss', 'valid_ppl', 
@@ -75,13 +63,13 @@ class Trainer:
             
             records.append(record_dict)
             self.print_epoch(record_dict)
-
-            if self.scheduler is not None:
-                self.scheduler.step()
+            
+            val_loss = record_dict['valid_loss']
+            self.scheduler.step(val_loss)
 
             #save best model
-            if best_bleu > record_dict['valid_loss']:
-                best_bleu = record_dict['valid_loss']
+            if best_bleu > val_loss:
+                best_bleu = val_loss
                 torch.save({'epoch': epoch,
                             'model_state_dict': self.model.state_dict(),
                             'optimizer_state_dict': self.optimizer.state_dict()},
@@ -98,15 +86,13 @@ class Trainer:
         tot_len = len(self.train_dataloader)
 
         for _, batch in enumerate(self.train_dataloader):
-            src, trg = batch['src'].to(self.device), batch['trg'].to(self.device)
+            src = batch['src'].to(self.device)
+            trg_input = batch['trg_input'].to(self.device)
+            trg_output = batch['trg_output'].to(self.device)
             
-            if self.model_name != 'transformer':
-                logit = self.model(src, trg, teacher_forcing_ratio=0.5)
-            elif self.model_name == 'transformer':
-                logit = self.model(src, trg[:, :-1])
-
+            logit = self.model(src, trg_input)
             loss = self.criterion(logit.contiguous().view(-1, self.output_dim),
-                                  trg[:, 1:].contiguous().view(-1))
+                                  trg_output.contiguous().view(-1))
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip)
             
@@ -115,8 +101,9 @@ class Trainer:
 
             epoch_loss += loss.item()
         
-        epoch_loss = epoch_loss / tot_len
-        return epoch_loss, math.exp(epoch_loss)
+        epoch_loss = round(epoch_loss / tot_len, 3)
+        epoch_ppl = round(math.exp(epoch_loss), 3)    
+        return epoch_loss, epoch_ppl
     
 
     def valid_epoch(self):
@@ -126,16 +113,19 @@ class Trainer:
         
         with torch.no_grad():
             for _, batch in enumerate(self.valid_dataloader):
-                src, trg = batch['src'].to(self.device), batch['trg'].to(self.device)
+                src = batch['src'].to(self.device)
+                trg_input = batch['trg_input'].to(self.device)
+                trg_output = batch['trg_output'].to(self.device)
                 
                 if self.model_name != 'transformer':
-                    logit = self.model(src, trg, teacher_forcing_ratio=0.0)
-                elif self.model_name == 'transformer':
-                    logit = self.model(src, trg[:, :-1])
+                    logit = self.model(src, trg_input, teacher_forcing_ratio=0.0)
+                else:
+                    logit = self.model(src, trg_input)
 
                 loss = self.criterion(logit.contiguous().view(-1, self.output_dim),
-                                      trg[:, 1:].contiguous().view(-1))
+                                      trg_output.contiguous().view(-1))
                 epoch_loss += loss.item()
         
-        epoch_loss = epoch_loss / tot_len
-        return epoch_loss, math.exp(epoch_loss)
+        epoch_loss = round(epoch_loss / tot_len, 3)
+        epoch_ppl = round(math.exp(epoch_loss), 3)        
+        return epoch_loss, epoch_ppl
