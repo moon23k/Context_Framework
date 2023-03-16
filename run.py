@@ -1,44 +1,27 @@
-import numpy as np
-import sentencepiece as spm
-import os, yaml, random, argparse
+import torch, argparse
+from module.model import load_model
+from module.data import load_dataloader
+from module.test import Tester
+from module.train import Trainer
+from transformers import set_seed, BertTokenizerFast
 
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.backends.cudnn as cudnn
-
-from modules.model import load_model
-from modules.data import load_dataloader
-
-from modules.test import Tester
-from modules.train import Trainer
-from modules.inference import Summarizer
 
 
 
 class Config(object):
     def __init__(self, args):    
-        with open('configs/model.yaml', 'r') as f:
-            params = yaml.load(f, Loader=yaml.FullLoader)
-            params = params[args.model]
-            for p in params.items():
-                setattr(self, p[0], p[1])
 
-        self.task = args.task
+        self.mode = args.mode
         self.model_name = args.model
-        
-        self.pad_idx = 0
-        self.unk_idx = 1
-        self.bos_idx = 2
-        self.eos_idx = 3
 
         self.clip = 1
         self.n_epochs = 10
-        self.batch_size = 32
-        self.learning_rate = 5e-4
+        self.batch_size = 128
+        self.learning_rate = 1e-3
+        self.iters_to_accumulate = 4
         self.ckpt_path = f"ckpt/{self.model_name}.pt"
 
-        if self.task == 'inference':
+        if self.mode == 'inference':
             self.search_method = args.search
             self.device = torch.device('cpu')
         else:
@@ -52,32 +35,13 @@ class Config(object):
 
 
 
-def set_seed(SEED=42):
-    random.seed(SEED)
-    np.random.seed(SEED)
-    torch.manual_seed(SEED)
-    torch.cuda.manual_seed(SEED)
-    torch.cuda.manual_seed_all(SEED)
-    cudnn.benchmark = False
-    cudnn.deterministic = True
-
-
-
-def load_tokenizer():
-    tokenizer = spm.SentencePieceProcessor()
-    tokenizer.load(f'data/spm.model')
-    tokenizer.SetEncodeExtraOptions('bos:eos')
-    return tokenizer
-
-
-
-def tranaslate(config, model, tokenizer):
-    print('Type "quit" to terminate Translation')
+def inference(config, model, tokenizer):
+    print('Type "quit" to terminate Summarization')
     
     while True:
         user_input = input('Please Type Text >> ')
         if user_input.lower() == 'quit':
-            print('--- Terminate the Translation ---')
+            print('--- Terminate the Summarization ---')
             print('-' * 30)
             break
 
@@ -90,46 +54,50 @@ def tranaslate(config, model, tokenizer):
             pred_seq = config.search.greedy_search(src)
 
         print(f" Original  Sequence: {user_input}")
-        print(f'Translated Sequence: {tokenizer.Decode(pred_seq)}\n')
+        print(f'Summarized Sequence: {tokenizer.Decode(pred_seq)}\n')
 
 
 
 def main(args):
-    set_seed()
+    set_seed(42)
     config = Config(args)
     model = load_model(config)
+    tokenizer = BertTokenizerFast.from_pretrained(config.bert_name)
 
-    if config.task == 'train': 
+
+
+    if config.mode == 'train': 
         train_dataloader = load_dataloader(config, 'train')
         valid_dataloader = load_dataloader(config, 'valid')
         trainer = Trainer(config, model, train_dataloader, valid_dataloader)
         trainer.train()
-    
-    elif config.task == 'test':
-        tokenizer = load_tokenizer()
+        return
+
+    elif config.mode == 'test':
         test_dataloader = load_dataloader(config, 'test')
-        tester = Tester(config, model, test_dataloader, tokenizer)
+        tester = Tester(config, model, tokenizer, test_dataloader)
         tester.test()
-        tester.inference_test()
+        return
     
-    elif config.task == 'inference':
-        tokenizer = load_tokenizer()
-        summarizer = Summarizer(config, model, tokenizer)
-        summarizer.summarize()
+    elif config.mode == 'inference':
+        summarizer = inference(config, model, tokenizer)
+        return
     
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-task', required=True)
+    parser.add_argument('-mode', required=True)
     parser.add_argument('-model', required=True)
     parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
-    assert args.task in ['train', 'test', 'inference']
-    assert args.model in ['seq2seq', 'attention', 'transformer']
+    assert args.mode in ['train', 'test', 'inference']
+    assert args.model in ['simple', 'fused']
 
     if args.task == 'inference':
+        import nltk
+        nltk.download('punkt')
         assert args.search in ['greedy', 'beam']
 
     main(args)

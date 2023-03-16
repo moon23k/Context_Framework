@@ -1,24 +1,8 @@
 import torch, os
 import torch.nn as nn
-from models.seq2seq import Seq2Seq
-from models.attention import Seq2SeqAttn
-from models.transformer import Transformer
+from model.simple import SimpleModel
+from model.fused import FusedModel
 
-
-
-
-def init_uniform(model):
-    for name, param in model.named_parameters():
-        nn.init.uniform_(param.data, -0.08, 0.08)
-
-
-
-def init_normal(model):
-    for name, param in model.named_parameters():
-        if 'weight' in name:
-            nn.init.normal_(param.data, mean=0, std=0.01)
-        else:
-            nn.init.constant_(param.data, 0)
 
 
 
@@ -49,17 +33,13 @@ def check_size(model):
 
 
 def load_model(config):
-    if config.model_name == 'seq2seq':
-        model = Seq2Seq(config)
+    if config.model_name == 'simple':
+        model = SimpleModel(config)
         model.apply(init_uniform)
 
-    elif config.model_name == 'attention':
-        model = Seq2SeqAttn(config)
+    elif config.model_name == 'fused':
+        model = FusedModel(config)
         model.apply(init_normal)
-
-    elif config.model_name == 'transformer':
-        model = Transformer(config)
-        model.apply(init_xavier)
         
     if config.task != 'train':
         assert os.path.exists(config.ckpt_path)
