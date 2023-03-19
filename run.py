@@ -13,6 +13,7 @@ class Config(object):
 
         self.mode = args.mode
         self.model_name = args.model
+        self.bert_name = 'bert-base-uncased'
 
         self.clip = 1
         self.n_epochs = 10
@@ -25,7 +26,7 @@ class Config(object):
             self.search_method = args.search
             self.device = torch.device('cpu')
         else:
-            self.search = None
+            self.search_method = None
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
 
@@ -63,8 +64,7 @@ def main(args):
     config = Config(args)
     model = load_model(config)
     tokenizer = BertTokenizerFast.from_pretrained(config.bert_name)
-
-
+    config.pad_id = tokenizer.pad_token_id
 
     if config.mode == 'train': 
         train_dataloader = load_dataloader(config, 'train')
@@ -88,12 +88,12 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-mode', required=True)
-    parser.add_argument('-model', required=True)
+    parser.add_argument('-strategy', required=True)
     parser.add_argument('-search', default='greedy', required=False)
     
     args = parser.parse_args()
     assert args.mode in ['train', 'test', 'inference']
-    assert args.model in ['simple', 'fused']
+    assert args.strategy in ['fine', 'feat']
 
     if args.task == 'inference':
         import nltk

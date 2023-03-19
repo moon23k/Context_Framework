@@ -1,14 +1,7 @@
 import torch, os
 import torch.nn as nn
-from model.simple import SimpleModel
-from model.fused import FusedModel
-
-
-
-
-def init_xavier(model):
-    if hasattr(model, 'weight') and model.weight.dim() > 1:
-        nn.init.xavier_uniform_(model.weight.data)
+from model.fine import FineModel
+from model.feat import FeatModel
 
 
 
@@ -33,13 +26,11 @@ def check_size(model):
 
 
 def load_model(config):
-    if config.model_name == 'simple':
-        model = SimpleModel(config)
-        model.apply(init_uniform)
+    if config.strategy == 'fine':
+        model = FineModel(config)
 
-    elif config.model_name == 'fused':
-        model = FusedModel(config)
-        model.apply(init_normal)
+    elif config.strategy == 'feat':
+        model = FeatModel(config)
         
     if config.task != 'train':
         assert os.path.exists(config.ckpt_path)

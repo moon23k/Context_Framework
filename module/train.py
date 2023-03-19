@@ -7,9 +7,12 @@ import torch.optim as optim
 class Trainer:
     def __init__(self, config, model, train_dataloader, valid_dataloader):
         super(Trainer, self).__init__()
+        
         self.model = model
         self.clip = config.clip
         self.device = config.device
+        
+        self.strategy = config.strategy
         self.n_epochs = config.n_epochs
         self.output_dim = config.output_dim
         
@@ -50,7 +53,9 @@ class Trainer:
         for epoch in range(1, self.n_epochs + 1):
             start_time = time.time()
 
-            record_vals = [epoch, *self.train_epoch(), *self.valid_epoch(), 
+            record_vals = [epoch, 
+                           *self.fine_train_epoch() if self.strategy == 'fine' else *self.feat_train_epoch(), 
+                           *self.fine_valid_epoch() if self.strategy == 'fine' else *self.feat_valid_epoch(), 
                            self.optimizer.param_groups[0]['lr'],
                            self.measure_time(start_time, time.time())]
             record_dict = {k: v for k, v in zip(self.record_keys, record_vals)}
@@ -74,7 +79,16 @@ class Trainer:
             json.dump(records, fp)
 
 
-    def train_epoch(self):
+
+    def fine_train_epoch(self):
+        return
+
+
+    def fine_valid_epoch(self):
+        return
+        
+
+    def feat_train_epoch(self):
         self.model.train()
         epoch_loss = 0
         tot_len = len(self.train_dataloader)
@@ -97,9 +111,10 @@ class Trainer:
         epoch_loss = round(epoch_loss / tot_len, 3)
         epoch_ppl = round(math.exp(epoch_loss), 3)    
         return epoch_loss, epoch_ppl
+        
     
 
-    def valid_epoch(self):
+    def feat_valid_epoch(self):
         self.model.eval()
         epoch_loss = 0
         tot_len = len(self.valid_dataloader)
