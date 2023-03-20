@@ -6,12 +6,12 @@ from torch.nn.utils.rnn import pad_sequence
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, split):
+    def __init__(self, strategy, split):
         super().__init__()
         self.data = self.load_data(strategy, split)
 
     @staticmethod
-    def load_data(split):
+    def load_data(strategy, split):
         with open(f"data/{strategy}/{split}.npy", 'rb') as f:
             data = np.load(f, allow_pickle=True)
         return data
@@ -59,9 +59,8 @@ class Collator(object):
     def fine_collate(self, batch):
         ids_batch, seg_batch, mask_batch, labels_batch = [], [], [], []
         for elem in batch:
-            ids_batch.append(torch.LongTensor(elem['input_ids'])) 
-            seg_batch.append(torch.LongTensor(elem['token_type_ids']))
-            mask_batch.append(torch.LongTensor(elem['attention_mask']))
+            len_ids = elem['input_ids'].size
+            ids_batch.append(torch.LongTensor(elem['input_ids']))
             labels_batch.append(torch.LongTensor(elem['labels']))
 
         ids_batch = self.pad_batch(ids_batch)
@@ -75,11 +74,7 @@ class Collator(object):
                 'labels': labels_batch}
 
     def pad_batch(self, batch):
-        return pad_sequence(batch, 
-                            batch_first=True, 
-                            padding_value=self.pad_id)
-
-
+        return pad_sequence(batch, batch_first=True, padding_value=self.pad_id)
 
 
 

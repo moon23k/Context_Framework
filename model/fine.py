@@ -1,36 +1,70 @@
-import torch
+import torch, copy
 import torch.nn as nn
+from transformers import BertModel
+from collections import namedtuple
+
+
+
+class Encoder(nn.Module):
+    def __init__(self, config):
+        super(Encoder, self).__init__()
+
+        self.bert = BertModel.from_pretrained(config.bert_name)
+        pos_embeddings = nn.Embedding(config.max_pos, config.hidden_size)
+        pos_embeddings.weight.data[:512] = self.bert.model.embeddings.position_embeddings.weight.data
+        pos_embeddings.weight.data[512:] = self.bert.model.embeddings.position_embeddings.weight.data[-1][None,:].repeat(config.max_len-512,1)
+        self.bert.model.embeddings.position_embeddings = pos_embeddings
+
+
+    def forward(self, x, m):
+        return self.bert(x, m).pooler_output
+
+
+class Decoder(nn.Module):
+    def __init__(self, config):
+        super(Decoder, self).__init__()
+
+        self.n_layers = config.n_layers
+        self.embeddings = nn.Embedding()
+        self.layers = nn.TransformerDecoderLayer()
+
+
+    def forward(self, x, m):
+        for layer in self.layers:
+            x = layer(x, m)
+        
+        return x
 
 
 
 class FineModel(nn.Module):
     def __init__(self, config):
         super(FineModel, self).__init__()
-
+        
         self.device = config.device
-        self.bert = BertModel.from_pretrained(config.bert_name).to(self.device)
+        self.encoder = Encoder(config)
+        self.decoder = Decoder(config)
+        self.generator = nn.Linear(config.hidden_dim, config.vocab_size)
 
-        #for seq length more than 512
-        my_pos_embeddings = nn.Embedding(args.max_pos, self.bert.model.config.hidden_size)
-        my_pos_embeddings.weight.data[:512] = self.bert.model.embeddings.position_embeddings.weight.data
-        my_pos_embeddings.weight.data[512:] = self.bert.model.embeddings.position_embeddings.weight.data[-1][None,:].repeat(args.max_pos-512,1)
-        self.bert.model.embeddings.position_embeddings = my_pos_embeddings
+        self.init_weights()
+        self.weight_sharing()
 
-        self.vocab_size = self.bert.model.config.vocab_size
-        tgt_embeddings = nn.Embedding(self.vocab_size, self.bert.model.config.hidden_size, padding_idx=0)
+        self.criterion = nn.CrossEntropyLoss(ignore_index=config.pad_id, 
+                                             label_smoothing=0.1).to(self.device)
+        self.outputs = namedtuple('outputs', ('logits', 'loss'))
 
-        if (self.args.share_emb):
-            tgt_embeddings.weight = copy.deepcopy(self.bert.model.embeddings.word_embeddings.weight)
 
-        self.decoder = TransformerDecoder(
-            self.args.dec_layers,
-            self.args.dec_hidden_size, heads=self.args.dec_heads,
-            d_ff=self.args.dec_ff_size, dropout=self.args.dec_dropout, embeddings=tgt_embeddings)
+    def forward(self, src, tgt, segs, clss, mask_src, mask_tgt, mask_cls):
+        
+        memory = self.bert(src, segs, mask_src)
+        dec_out = self.decoder(trg, memory, )
+        logits = self.generator(dec_out)
+        loss = self.criterion(logits.view(-1, self.vocab_size), 
+                              labels[:, 1:].contiguous().view(-1))
 
-        self.generator = get_generator(self.vocab_size, self.args.dec_hidden_size, device)
-        self.generator[0].weight = self.decoder.embeddings.weight
+        return self.outputs(logits, loss)
 
-        #디코더 초기화
+    def init_weights(self):
         for module in self.decoder.modules():
             if isinstance(module, (nn.Linear, nn.Embedding)):
                 module.weight.data.normal_(mean=0.0, std=0.02)
@@ -40,27 +74,16 @@ class FineModel(nn.Module):
             if isinstance(module, nn.Linear) and module.bias is not None:
                 module.bias.data.zero_()
 
-        #generator 초기화
+
+        #Init Generator Weights
         for p in self.generator.parameters():
             if p.dim() > 1:
                 xavier_uniform_(p)
             else:
-                p.data.zero_()
-
-        #기존 BERT의 EMB를 활용하기 위한 코드
-        tgt_embeddings = nn.Embedding(self.vocab_size, self.bert.model.config.hidden_size, padding_idx=0)
-        tgt_embeddings.weight = copy.deepcopy(self.bert.model.embeddings.word_embeddings.weight)
-        self.decoder.embeddings = tgt_embeddings
-        self.generator[0].weight = self.decoder.embeddings.weight
-
-        self.to(device)
-
-    def forward(self, src, tgt, segs, clss, mask_src, mask_tgt, mask_cls):
-        top_vec = self.bert(src, segs, mask_src)
-        dec_state = self.decoder.init_decoder_state(src, top_vec)
-        decoder_outputs, state = self.decoder(tgt[:, :-1], top_vec, dec_state)
-        return decoder_outputs, None
+                p.data.zero_()  
 
 
-    def init_weights(self):
-        return
+    def weight_sharing(self):
+        self.decoder.embeddings.weight = copy.deepcopy(self.encoder.embeddings.word_embeddings.weight)  
+        self.generator[0].weight = self.dec_embeddings.weight      
+        

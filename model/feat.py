@@ -1,17 +1,17 @@
-import torch
+import math, torch
 import torch.nn as nn
 from collections import namedtuple
+from transformers import BertModel
 
 
 
 
 class PositionalEncoding(nn.Module):
-	def __init__(self, config):
-		super(PositionalEncoding, self).__init__()
+    def __init__(self, config):
+        super(PositionalEncoding, self).__init__()
 
-	def forward(self, x):
-		return
-
+    def forward(self, x):
+        return
 
 
 
@@ -19,6 +19,10 @@ class Encoder(nn.Module):
     def __init__(self, config):
         super(Encoder, self).__init__()
 
+        self.pos_encoding = PositionalEncoding(config)
+        self.Linear = nn.Linear(config.bert_dim, config.hidden_dim)
+        self.dropout = nn.Dropout(config.dropout_ratio)
+        
         self.layers = nn.TransformerEncoderLayer(d_model=config.hidden_dim, 
         										 nhead=config.n_heads,
         										 dim_feedforward=config.pff_dim,
@@ -28,8 +32,8 @@ class Encoder(nn.Module):
         										 activation=config.act,
         										 device=config.device)
 
-    def forward(self, sent_embs, sent_masks):
-        x, mask = sent_embs, sent_masks
+    def forward(self, x, mask):
+
         for layer in self.layers:
             x = layer(x, mask)
         return x
@@ -40,7 +44,7 @@ class Decoder(nn.Module):
     def __init__(self, config):
         super(Decoder, self).__init__()
 
-        self.bert_emb = BertModel.from_pretrained(config.bert_name).embeddings
+        self.bert_emb = BertModel.from_pretrained(config.bert_name).embeddings.to(config.device)
         self.emb_linear = nn.Linear(config.bert_dim, config.hidden_dim)
         self.emb_dropout = nn.Dropout(config.dropout_ratio)
 
@@ -53,6 +57,10 @@ class Decoder(nn.Module):
         										 activation=config.act,
         										 device=config.device)
         
+        #Freeze bert embedding layers
+        for param in self.bert_emb.named_parameters():
+            param.requires_grad = False
+
 
     def forward(self, x, memory, e_mask, d_mask):
         x = self.bert_emb(x)
@@ -85,6 +93,7 @@ class FeatModel(nn.Module):
 
 
     def init_weights(self):
+        
         return
 
     def pad_mask(self, x):

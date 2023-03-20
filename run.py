@@ -12,22 +12,36 @@ class Config(object):
     def __init__(self, args):    
 
         self.mode = args.mode
-        self.model_name = args.model
+        self.strategy = args.strategy
         self.bert_name = 'bert-base-uncased'
 
+        #Training args
         self.clip = 1
         self.n_epochs = 10
         self.batch_size = 128
         self.learning_rate = 1e-3
+        self.device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.iters_to_accumulate = 4
         self.ckpt_path = f"ckpt/{self.model_name}.pt"
+
+        #Model args
+        self.n_heads = 8
+        self.n_layers = 6
+        self.pff_dim = 2048
+        self.bert_dim = 768
+        self.hidden_dim = 512
+        self.dropout_ratio = 0.1
+        self.max_len = 3000
+        self.act = 'gelu'
+        self.norm_first = True
+        self.batch_first = True
 
         if self.mode == 'inference':
             self.search_method = args.search
             self.device = torch.device('cpu')
         else:
             self.search_method = None
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            self.device = torch.device(self.device_type)
         
 
     def print_attr(self):
