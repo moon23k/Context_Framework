@@ -5,24 +5,35 @@ from transformers import BertModel
 
 
 
-
 class PositionalEncoding(nn.Module):
-    def __init__(self, config):
-        super(PositionalEncoding, self).__init__()
+    def __init__(self, config, encoder=False, decoder=False):
+        
+        assert not (encoder or decoder)
+        self.max_len = config.max_sents if encoder else config.max_tokens
+
+        self.embedding = nn.Embedding(self.max_len, config.hidden_dim)
+        self.register_buffer('pos_ids', torch.arange(self.max_len).expand((1, -1)))
+
+        self.layer_norm = nn.LayerNorm()
+        self.dropout = nn.Dropout(config.dropout_ratio)
+
 
     def forward(self, x):
-        return
+        curr_len = x.size(1)
+
+        pos_ids = self.pos_ids[:, :curr_len]
+        pos_emb = self.pos_emb(pos_ids)
+        
+        x += pos_emb
+
+        return self.dropout(self.layer_norm(x))
 
 
 
 class Encoder(nn.Module):
     def __init__(self, config):
         super(Encoder, self).__init__()
-
-        self.pos_encoding = PositionalEncoding(config)
-        self.Linear = nn.Linear(config.bert_dim, config.hidden_dim)
-        self.dropout = nn.Dropout(config.dropout_ratio)
-        
+        self.pos_emb = PositionalEncoding(config, encoder=True)
         self.layers = nn.TransformerEncoderLayer(d_model=config.hidden_dim, 
         										 nhead=config.n_heads,
         										 dim_feedforward=config.pff_dim,
@@ -44,6 +55,9 @@ class Decoder(nn.Module):
     def __init__(self, config):
         super(Decoder, self).__init__()
 
+        self.token_emb = nn.Embedding(config.vocab_size, config.hidden_dim, padding_idx=config.pad_id)
+        self.pos_emb = PositionalEncoding(config, decoder=True)
+        
         self.bert_emb = BertModel.from_pretrained(config.bert_name).embeddings.to(config.device)
         self.emb_linear = nn.Linear(config.bert_dim, config.hidden_dim)
         self.emb_dropout = nn.Dropout(config.dropout_ratio)
@@ -57,14 +71,9 @@ class Decoder(nn.Module):
         										 activation=config.act,
         										 device=config.device)
         
-        #Freeze bert embedding layers
-        for param in self.bert_emb.named_parameters():
-            param.requires_grad = False
-
 
     def forward(self, x, memory, e_mask, d_mask):
-        x = self.bert_emb(x)
-        x = self.emb_dropout(self.emb_linear(x))
+        x = self.pos_emb(self.token_emb(x))
 
         for layer in self.layers:
             x = layer(x, memory, e_mask, d_mask)
@@ -95,6 +104,7 @@ class FeatModel(nn.Module):
     def init_weights(self):
         
         return
+
 
     def pad_mask(self, x):
         return (x != self.pad_id).unsqueeze(1).unsqueeze(2)
@@ -129,3 +139,15 @@ class FeatModel(nn.Module):
                               labels[:, 1:].contiguous().view(-1))
 
         return self.outputs(logits, loss)
+
+
+
+class Search:
+    def __init__(self, config, model):
+        self.model = model
+
+    def greedy_search(self, input_tensor):
+        return
+
+    def beam_search(self, input_tensor):
+        return

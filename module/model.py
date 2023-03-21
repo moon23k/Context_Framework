@@ -37,7 +37,7 @@ def load_model(config):
         model_state = torch.load(config.ckpt_path, map_location=config.device)['model_state_dict']
         model.load_state_dict(model_state)
 
-    print(f"The {config.model_name} model has loaded")
+    print(f"Trained {config.strategy.upper()} model has loaded")
     print(f"--- Model Params: {count_params(model):,}")
     print(f"--- Model  Size : {check_size(model):.3f} MB\n")
     return model.to(config.device)

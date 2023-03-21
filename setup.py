@@ -127,53 +127,58 @@ class BertDataset(torch.utils.data.Dataset):
         return {'input_ids': self.data[idx]['input_ids'],
                 'attention_mask': self.data[idx]['attention_mask']}
 
-
 class BertCollator(object):
     def __init__(self, config):
-        self.pad_id = config.pad_id
         self.max_sents = config.max_sents
         self.max_tokens = config.max_tokens
     
     def __call__(self, batch):
         ids_batch, mask_batch = [], []
         for elem in batch:
-            ids_batch.append() 
-            mask_batch.append()
-        
+            seq_num, seq_len = elem['input_ids'].shape
+
+            token_pads = np.zeros((seq_num, self.max_tokens-seq_len)).astype(int)
+            sents_pads = np.zeros((self.max_sents-seq_num, self.max_tokens)).astype(int)
+
+            padded_ids = np.concatenate((elem['input_ids'], token_pads), axis=1)
+            padded_ids = np.concatenate((padded_ids, sents_pads), axis=0)
+
+            padded_mask = np.concatenate((elem['attention_mask'], token_pads), axis=1)
+            padded_mask = np.concatenate((padded_mask, sents_pads), axis=0)
+
+            ids_batch.append(padded_ids)
+            mask_batch.append(padded_mask)
+
+        ids_batch = torch.LongTensor(ids_batch)
+        mask_batch = torch.LongTensor(mask_batch)
+
         return {'input_ids': ids_batch, 
                 'attention_mask': mask_batch}
 
 
 
 
-def feat_processing(config, bert_model, data_obj):
-    max_sents, max_tokens = config.max_sents, config.max_tokens
-
-    processed = []
+def feat_processing(config, bert_model, dataloader):
+    processed = []    
     bert_model.eval()
 
-    for elem in tqdm(data_obj):
-        curr_sents, curr_tokens = elem['input_ids'].shape
+    for batch in dataloader:
+    
+        input_ids = batch['input_ids'].to(config.device)
+        attention_mask = batch['attention_mask'].to(config.device)
 
-        pad_tokens = np.zeros((curr_sents, max_tokens-curr_tokens), dtype='int64')
-        pad_sents = np.zeros((max_sents-curr_sents, max_tokens), dtype='int64')
+        input_ids = input_ids.view(-1, config.max_tokens)
+        attention_mask = attention_mask.view(-1, config.max_tokens)
 
-        padded_input_ids = np.concatenate((elem['input_ids'], pad_tokens), axis=1)
-        padded_input_ids = np.concatenate((padded_input_ids, pad_sents), axis=0)
 
-        padded_attention_mask = np.concatenate((elem['attention_mask'], pad_tokens), axis=1)
-        padded_attention_mask = np.concatenate((padded_attention_mask, pad_sents), axis=0)
-
-        input_ids = torch.LongTensor(padded_input_ids).to(bert_model.device)
-        attention_mask = torch.LongTensor(padded_attention_mask).to(bert_model.device)
-
-        #get bert_out
         with torch.no_grad():
             with torch.autocast(device_type=config.device_type, dtype=torch.float16):
-                bert_out = bert_model(input_ids = input_ids, attention_mask = attention_mask).pooler_output
+                bert_out = bert_model(input_ids=input_ids, attention_mask=attention_mask).pooler_output
+                bert_out = bert_out.view(config.batch_size, config.max_sents, -1)
                 
-        #get sent_masks
-        sent_masks = np.concatenate((np.ones(curr_sents), np.zeros(max_sents-curr_sents)), axis=0).astype(int)
+        #skip padded sents
+        attention_mask        
+
 
         processed.append({'sent_embs': bert_out.cpu().detach().numpy(),
                           'sent_masks': sent_masks,
