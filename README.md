@@ -1,18 +1,18 @@
 ## Sum BERT
 
-BERT is widely used in many NLP Down Streaming Task via Transfer Learning. However transfer the BERT into Sequence Genreration Task is not straightforward, since it has pre-trained on MLM and NSP objectives. This is especially true when dealing with long sequences, such as Text Summarization. To mend this problem BERT-based framework for Text Summarization, named **BERTSUM** has been proposed. 
-Although BERTSUM outperforms BERT on the summarization task, it still does not handle long sequence properly, only limiting the maximum length to 512.
+BERT is widely used in many NLP Down Streaming Task via Transfer Learning. However transfering BERT into Sequence Genreration Task is not straightforward. This is especially true when dealing with long sequences, such as Text Summarization. To mend this problem BERT-based Text Summarization framework, named **BERTSUM** has been proposed. 
 
 
 <br><br>
 
 ## Strategies
 
-**BERTSUM** <br>
+**Fine Tuning** <br>
+
 
 <br>
 
-**Use BERT as Embeddings for Transformer** <br>
+**Featuring** <br>
 
 <br>
 
@@ -37,7 +37,7 @@ python3 setup.py
 ```
 
 ```
-python3 run.py -mode [train, test, inference] -strategy [simple, fused]
+python3 run.py -mode [train, test, inference] -strategy [fine, feat]
 ```
 
 <br><br>
