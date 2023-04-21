@@ -13,16 +13,18 @@ class Config(object):
 
         self.mode = args.mode
         self.strategy = args.strategy
-        self.bert_name = 'bert-base-uncased'
+        self.bert_name = 'prajjwal1/bert-small'
 
         #Training args
         self.clip = 1
         self.n_epochs = 10
-        self.batch_size = 128
-        self.learning_rate = 1e-3
-        self.device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.batch_size = 32
+        self.learning_rate = 5e-4
         self.iters_to_accumulate = 4
-        self.ckpt_path = f"ckpt/{self.model_name}.pt"
+        self.ckpt_path = f"ckpt/{self.strategy}.pt"
+
+        self.early_stop = True
+        self.patience = 3
 
         #Model args
         self.n_heads = 8
@@ -41,7 +43,7 @@ class Config(object):
             self.device = torch.device('cpu')
         else:
             self.search_method = None
-            self.device = torch.device(self.device_type)
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
 
     def print_attr(self):
@@ -107,7 +109,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     assert args.mode in ['train', 'test', 'inference']
-    assert args.strategy in ['fine', 'feat']
+    assert args.strategy in ['fine', 'feat', 'fuse']
 
     if args.task == 'inference':
         import nltk

@@ -1,6 +1,7 @@
 import torch, os
 import torch.nn as nn
 from model.fine import FineModel
+from model.fuse import FuseModel
 from model.feat import FeatModel
 
 
@@ -28,16 +29,17 @@ def check_size(model):
 def load_model(config):
     if config.strategy == 'fine':
         model = FineModel(config)
-
+    elif config.strategy == 'fuse':
+        model = FuseModel(config)
     elif config.strategy == 'feat':
         model = FeatModel(config)
-        
+
     if config.task != 'train':
         assert os.path.exists(config.ckpt_path)
         model_state = torch.load(config.ckpt_path, map_location=config.device)['model_state_dict']
         model.load_state_dict(model_state)
 
-    print(f"Trained {config.strategy.upper()} model has loaded")
+    print(f"{config.strategy.upper()} model for {config.mode} has loaded")
     print(f"--- Model Params: {count_params(model):,}")
     print(f"--- Model  Size : {check_size(model):.3f} MB\n")
     return model.to(config.device)

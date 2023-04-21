@@ -38,7 +38,7 @@ class Decoder(nn.Module):
 
 
 
-class FeatModel(nn.Module):
+class FuseModel(nn.Module):
     def __init__(self, config):
         super(FineModel, self).__init__()
         

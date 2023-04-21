@@ -1,118 +1,26 @@
-import os, re, json, nltk, argparse, torch
-import numpy as np
+import os, re, json, nltk, torch, argparse
 from tqdm import tqdm
 from datasets import load_dataset
 from torch.utils.data import DataLoader
-from torch.nn.utils.rnn import pad_sequence
 from transformers import BertModel, BertTokenizerFast
 
 
 
-class SetupConfig(object):
-    def __init__(self, strategy):    
+class SetupConfig:
+    def __init__(self):            
 
-        self.strategy = strategy
-        
-        self.volumn = 32000
-        self.max_num = 50
-        self.min_len = 500
+        self.volumn = 12000
+        self.min_len = 1000
         self.max_len = 3000
+        self.model_max_length = 1024        
         
-        self.max_sents = 0
-        self.max_tokens = 0
-        self.pad_token_id = None
-        
-        device_type = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.device_type = device_type
-        self.device = torch.device(device_type)
-        self.bert_name= 'bert-base-uncased'
-        self.batch_size = 32
+        self.bert_name= 'prajjwal1/bert-small'
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
 
     def print_attr(self):
         for attribute, value in self.__dict__.items():
             print(f"* {attribute}: {value}")
-
-
-
-def list2arr(lst):
-    return np.array(lst).astype(int)
-
-
-def select_data(config, orig_data):
-    volumn_cnt, selected = 0, []
-
-    for elem in orig_data:
-        src, trg = elem['article'].lower(), elem['highlights'].lower()
-
-        #Filter too Short or too Long Context
-        if not (config.min_len < len(src) < config.max_len):
-            continue
-        if len(trg) > config.min_len:
-            continue
-        
-        #Filter too long Sentences 
-        src = nltk.tokenize.sent_tokenize(src)
-        src_sents = len(src)
-        if src_sents > config.max_num:
-            continue
-        for seq in src:
-            if len(seq) > config.min_len:
-                break
-
-        #remove unnecessary characters in trg sequence
-        trg = re.sub(r'\n', ' ', trg)                 #remove \n
-        trg = re.sub(r"\s([.](?:\s|$))", r'\1', trg)  #remove whitespace in front of dot
-
-        selected.append({'src': src, 'trg': trg})
-
-        volumn_cnt += 1
-        if volumn_cnt == config.volumn:
-            break
-    
-    return selected
-
-
-
-def tokenize_data(config, tokenizer, data_obj):
-    tokenized = []
-    max_sents, max_tokens = 0, 0
-
-    for elem in data_obj:
-        src_encodings = tokenizer(elem['src'], padding=True, truncation=True, return_tensors='np')
-        trg_encodings = tokenizer(elem['trg'], padding=True, truncation=True, return_tensors='np')
-
-        curr_sents, curr_tokens = src_encodings.input_ids.shape
-
-        if max_sents < curr_sents:
-            max_sents = curr_sents
-
-        if max_tokens < curr_tokens:
-            max_tokens = curr_tokens            
-
-        tokenized.append({'input_ids': src_encodings.input_ids.astype(int),
-                          'attention_mask':src_encodings.attention_mask.astype(int),
-                          'labels': trg_encodings.input_ids.squeeze().astype(int)})
-        
-    config.max_sents = max_sents
-    config.max_tokens = max_tokens
-        
-    return tokenized
-
-
-
-def fine_processing(config, data_obj):
-    processed = []
-    for elem in data_obj:
-        temp = []
-        for idx, seq in enumerate(elem['input_ids']):
-            seq_ids = [tok for tok in seq if tok != config.pad_token_id]
-            temp.extend(seq_ids)
-        
-        processed.append({'input_ids': list2arr(temp),
-                          'labels': elem['labels']})
-
-    return processed
 
 
 
@@ -124,114 +32,122 @@ class BertDataset(torch.utils.data.Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        return {'input_ids': self.data[idx]['input_ids'],
-                'attention_mask': self.data[idx]['attention_mask']}
+        ids = torch.LongTensor(self.data[idx]['input_ids'])
+        seg = torch.LongTensor(self.data[idx]['token_type_ids'])
+        indice = torch.LongTensor(self.data[idx]['cls_indice'])
+        mask = torch.ones_like(ids, dtype=torch.long)
+
+        return {'input_ids': ids,
+                'token_type_ids': seg,
+                'attention_mask': mask,
+                'cls_indice': indice}
 
 
-class BertCollator(object):
-    def __init__(self, config):
-        self.max_sents = config.max_sents
-        self.max_tokens = config.max_tokens
+
+def load_model(config):
+    model = BertModel.from_pretrained(config.bert_name)
+
+    model.embeddings.position_ids = torch.arange(config.model_max_length).expand((1, -1))
+    model.embeddings.token_type_ids = torch.zeros(config.model_max_length).expand((1, -1))
+    orig_pos_emb = model.embeddings.position_embeddings.weight
+    model.embeddings.position_embeddings.weight = torch.nn.Parameter(torch.cat((orig_pos_emb, orig_pos_emb)))
+    model.config.max_position_embeddings = config.model_max_length
+
+    return model.to(config.device)
+
+
+
+#Select and Tokenize Data
+def process_data(config, orig_data, tokenizer):
+    selected = []
+    volumn_cnt = 0
     
-    def __call__(self, batch):
-        ids_batch, mask_batch, sent_batch = [], [], []
-        for elem in batch:
-            seq_num, seq_len = elem['input_ids'].shape
+    for elem in orig_data:
+        src, trg = elem['article'].lower(), elem['highlights'].lower()
+
+        #Filter too Short or too Long Context
+        if not (config.min_len < len(src) < config.max_len):
+            continue
+
+        src = nltk.tokenize.sent_tokenize(src)
+        src = tokenizer(src).input_ids
+        
+        temp_ids, temp_segs = [], []
+        for idx, ids in enumerate(src):
+            _len = len(ids)
             
-            sents_pads_len = self.max_sents-seq_num
-            token_pads_len = self.max_tokens-seq_len
+            #Add ids
+            temp_ids.extend(ids)
+            
+            #Add segs
+            if not idx % 2:
+                temp_segs.extend([0 for _ in range(_len)])
+            else:
+                temp_segs.extend([1 for _ in range(_len)])
 
-            token_pads = np.zeros((seq_num, token_pads_len)).astype(int)
-            sents_pads = np.zeros((sents_pads_len, self.max_tokens)).astype(int)
+        selected.append({"input_ids": temp_ids,
+                         "token_type_ids": temp_segs,
+                         "cls_indice": [i for i, x in enumerate(temp_ids) if x == 101],
+                         'labels': tokenizer(trg).input_ids})
+        
+        volumn_cnt += 1
+        if volumn_cnt == config.volumn:
+            break
 
-            padded_ids = np.concatenate((elem['input_ids'], token_pads), axis=1)
-            padded_ids = np.concatenate((padded_ids, sents_pads), axis=0)
-
-            padded_mask = np.concatenate((elem['attention_mask'], token_pads), axis=1)
-            padded_mask = np.concatenate((padded_mask, sents_pads), axis=0)
-
-            sentence_mask = [1 for _ in range(seq_num)] + [0 for _ in range(sents_pads_len)]
-            sentence_mask = np.array(sentence_mask).astype(int)
-
-            ids_batch.append(padded_ids)
-            mask_batch.append(padded_mask)
-            sent_batch.append(sentence_mask)
-
-        ids_batch = torch.LongTensor(ids_batch)
-        mask_batch = torch.LongTensor(mask_batch)
-
-        return {'input_ids': ids_batch, 
-                'attention_mask': mask_batch,
-                'sentence_mask': sent_mask}
+    return selected
 
 
 
-
-def feat_processing(config, bert_model, dataloader):
-    processed = []    
-    bert_model.eval()
-
-    for batch in dataloader:
+def extract_features(model, dataloader):
+    model.eval()
+    features = []
+    device = model.device
+    cpu = torch.device('cpu')
     
-        input_ids = batch['input_ids'].to(config.device)
-        attention_mask = batch['attention_mask'].to(config.device)
-        sentence_mask = batch['sentence_mask']
-
-        input_ids = input_ids.view(-1, config.max_tokens)
-        attention_mask = attention_mask.view(-1, config.max_tokens)
-
-
+    for batch in tqdm(dataloader):
         with torch.no_grad():
-            with torch.autocast(device_type=config.device_type, dtype=torch.float16):
-                bert_out = bert_model(input_ids=input_ids, attention_mask=attention_mask).pooler_output
-                bert_out = bert_out.view(config.batch_size, config.max_sents, -1)
+            with torch.autocast(device_type=device.type, dtype=torch.float16):
+                out = model(input_ids=batch['input_ids'].to(device), 
+                            token_type_ids=batch['token_type_ids'].to(device),
+                            attention_mask=batch['attention_mask'].to(device))
+        
+        out = out.last_hidden_state.squeeze().to(cpu)
+        out = torch.index_select(out, 0, batch['cls_indice'].squeeze())
+        features.append({'last_hidden_state': out})    
 
-        processed.append({'sent_embs': bert_out.cpu().detach().numpy(),
-                          'sent_masks': sentence_mask,
-                          'labels': elem['labels']})
-
-    return processed
+    return features
 
 
 
-def save_data(config, data_obj):
+def save_data(data_obj, strategy):
     #split data into train/valid/test sets
     train, valid, test = data_obj[:-2000], data_obj[-2000:-1000], data_obj[-1000:]
     data_dict = {k:v for k, v in zip(['train', 'valid', 'test'], [train, valid, test])}
 
-    os.makedirs(f"data/{config.strategy}", exist_ok=True)
     for key, val in data_dict.items():
-        with open(f'data/{config.strategy}/{key}.npy', 'wb') as f:
-            np.save(f, val)        
-        assert os.path.exists(f'data/{config.strategy}/{key}.npy')
+        if strategy != 'feat':
+            with open(f'data/{key}.json', 'w') as f:
+                json.dump(val, f)                    
+        else:
+            torch.save(val, f"data/{key}.pt")
 
 
-
-def main(config):
-    #pre-requisites
-    tokenizer = BertTokenizerFast.from_pretrained(config.bert_name)
-    config.pad_token_id = tokenizer.pad_token_id
-
+def main(strategy):
+    config = SetupConfig()
     orig = load_dataset('cnn_dailymail', '3.0.0', split='train')
-    selected = select_data(config, orig)
-    tokenized = tokenize_data(config, tokenizer, selected)
+    tokenizer = BertTokenizerFast.from_pretrained(config.bert_name)
+    tokenizer.model_max_length = config.model_max_length
+    model = load_model(config)
 
-    if config.strategy == 'feat':
-        
-        bert_model = BertModel.from_pretrained(config.bert_name).to(config.device)
-        
-        bert_dataloader = DataLoader(BertDataset(tokenized),
-                                     batch_size=config.batch_size,
-                                     shuffle=False,
-                                     collate_fn=BertCollator(config),
-                                     num_workers=2)
-
-        processed = feat_processing(config, bert_model, tokenized)
+    processed = process_data(config, orig, tokenizer)
     
-    elif config.strategy == 'fine':
-        processed = fine_processing(config, tokenized)
+    if strategy != 'feat':
+        save_data(processed, 'fine')
 
-    save_data(config, processed)
+    if strategy != 'fine':
+        bert_dataloader = DataLoader(BertDataset(processed), shuffle=False, num_workers=2)
+        feature_data = extract_features(model, bert_dataloader)
+        save_data(feature_data, 'feat')
 
 
 
@@ -240,8 +156,7 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-strategy', required=True)
+    
     args = parser.parse_args()
-    assert args.strategy in ['fine', 'feat']
-
-    config = SetupConfig(args.strategy)
-    main(config)
+    assert args.strategy in ['all', 'fine', 'feat']    
+    main(args.strategy)
