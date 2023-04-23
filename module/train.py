@@ -15,6 +15,9 @@ class Trainer:
         self.strategy = config.strategy
         self.n_epochs = config.n_epochs
         self.output_dim = config.output_dim
+
+        self.early_stop = config.early_stop
+        self.patience = config.patience
         
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
@@ -77,25 +80,6 @@ class Trainer:
             json.dump(records, fp)
 
 
-    def get_loss(self, batch):
-        if self.strategy == 'fine':
-            input_ids = batch['input_ids'].to(self.devive)
-            token_type_ids = batch['token_type_ids'].to(self.devive)
-            attention_mask = batch['attention_mask'].to(self.devive)
-            labels = batch['labels'].to(self.devive)
-            
-            loss = self.model(input_ids=input_ids, token_type_ids=token_type_ids,
-                              attention_mask=attention_mask, labels=labels).loss
-
-        elif self.strategy == 'feat':
-            sent_embs = batch['sent_embs'].to(self.device)
-            sent_masks = batch['sent_masks'].to(self.device)
-            labels = batch['labels'].to(self.device)
-
-            loss = self.model(sent_embs=sent_embs, sents_mask=sent_masks, labels=labels).loss            
-
-        return ross
-
 
     def train_epoch(self):
         self.model.train()
@@ -103,7 +87,15 @@ class Trainer:
         tot_len = len(self.train_dataloader)
 
         for idx, batch in enumerate(self.train_dataloader):
-            loss = self.get_loss(batch)
+            input_ids = batch['input_ids'].to(self.device) 
+            token_type_ids = batch['token_type_ids'].to(self.device)
+            attention_mask = batch['attention_mask'].to(self.device)
+            labels = batch['labels'].to(self.device)
+
+            loss = self.model(input_ids=input_ids, 
+                              token_type_ids=token_type_ids, 
+                              attention_mask=attention_mask, 
+                              labels=labels).loss
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip)
             
@@ -124,9 +116,18 @@ class Trainer:
         tot_len = len(self.valid_dataloader)
         
         with torch.no_grad():
-            for idx, batch in enumerate(self.valid_dataloader):                
-                loss = self.get_loss(batch)
-                epoch_loss += loss.item()
+            for batch in self.valid_dataloader:                
+
+                input_ids = batch['input_ids'].to(self.device) 
+                token_type_ids = batch['token_type_ids'].to(self.device)
+                attention_mask = batch['attention_mask'].to(self.device)
+                labels = batch['labels'].to(self.device)
+
+                loss = self.model(input_ids=input_ids, 
+                                  token_type_ids=token_type_ids, 
+                                  attention_mask=attention_mask, 
+                                  labels=labels).loss
+
         
         epoch_loss = round(epoch_loss / tot_len, 3)
         epoch_ppl = round(math.exp(epoch_loss), 3)        

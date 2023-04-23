@@ -1,9 +1,9 @@
-import torch, argparse
+import copy, argparse, torch
 from module.model import load_model
 from module.data import load_dataloader
 from module.test import Tester
 from module.train import Trainer
-from transformers import set_seed, BertTokenizerFast
+from transformers import set_seed, BertModel, BertTokenizerFast
 
 
 
@@ -51,6 +51,19 @@ class Config(object):
             print(f"* {attribute}: {value}")
 
 
+def load_bert(self, config):
+    bert = BertModel.from_pretrained(config.bert_name)
+    bert_embeddings = copy.deepcopy(bert.embeddings)
+
+    bert.embeddings.position_ids = torch.arange(config.model_max_length).expand((1, -1))
+    bert.embeddings.token_type_ids = torch.zeros(config.model_max_length).expand((1, -1))
+    
+    pos_weight = bert.embeddings.position_embeddings.weight
+    bert.embeddings.position_embeddings.weight = torch.nn.Parameter(torch.cat((pos_weight, pos_weight)))
+    bert.config.max_position_embeddings = config.model_max_length
+    
+    return bert, bert_embeddings
+
 
 def inference(config, model, tokenizer):
     print('Type "quit" to terminate Summarization')
@@ -78,9 +91,15 @@ def inference(config, model, tokenizer):
 def main(args):
     set_seed(42)
     config = Config(args)
-    model = load_model(config)
     tokenizer = BertTokenizerFast.from_pretrained(config.bert_name)
     config.pad_id = tokenizer.pad_token_id
+    
+    if config.strategy != 'feat':
+        bert = BertModel.from_pretrained(config.bert_name)
+        model = load_model(config, bert)
+    else:
+        model = load_model(config)
+
 
     if config.mode == 'train': 
         train_dataloader = load_dataloader(config, 'train')

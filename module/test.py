@@ -30,12 +30,5 @@ class Tester:
             return self.feat_test()
 
 
-    def fine_test(self):
-        return
-
-
-    def feat_test(self)
-        return
-
     def metric_score(self, pred, label):
-        return
+        return score

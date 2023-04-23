@@ -5,20 +5,31 @@ from collections import namedtuple
 
 
 
+class EncoderLayer(nn.Module):
+    def __init__(self, config):
+        super(EncoderLayer, self).__init__()
+        
+    def forward(self, input_ids, token_type_ids, attention_mask):
+        return 
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, config):
+        super(DecoderLayer, self).__init__()
+        
+    def forward(self, input_ids, token_type_ids, attention_mask):
+        return 
+
 
 class Encoder(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, bert):
         super(Encoder, self).__init__()
-
-        self.bert = BertModel.from_pretrained(config.bert_name)
-        pos_embeddings = nn.Embedding(config.max_pos, config.hidden_size)
-        pos_embeddings.weight.data[:512] = self.bert.model.embeddings.position_embeddings.weight.data
-        pos_embeddings.weight.data[512:] = self.bert.model.embeddings.position_embeddings.weight.data[-1][None,:].repeat(config.max_len-512,1)
-        self.bert.model.embeddings.position_embeddings = pos_embeddings
+        self.bert = bert
+        self.layers = clones()
 
 
-    def forward(self, x, m):
-        return self.bert(x, m).pooler_output
+    def forward(self, input_ids, token_type_ids, attention_mask):
+        return 
 
 
 class Decoder(nn.Module):
@@ -39,12 +50,12 @@ class Decoder(nn.Module):
 
 
 class FuseModel(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, bert, bert_embeddings):
         super(FineModel, self).__init__()
         
         self.device = config.device
-        self.encoder = Encoder(config)
-        self.decoder = Decoder(config)
+        self.encoder = Encoder(config, bert)
+        self.decoder = Decoder(config, bert, bert_embeddings)
         self.generator = nn.Linear(config.hidden_dim, config.vocab_size)
 
         self.init_weights()
@@ -65,26 +76,3 @@ class FuseModel(nn.Module):
 
         return self.outputs(logits, loss)
 
-    def init_weights(self):
-        for module in self.decoder.modules():
-            if isinstance(module, (nn.Linear, nn.Embedding)):
-                module.weight.data.normal_(mean=0.0, std=0.02)
-            elif isinstance(module, nn.LayerNorm):
-                module.bias.data.zero_()
-                module.weight.data.fill_(1.0)
-            if isinstance(module, nn.Linear) and module.bias is not None:
-                module.bias.data.zero_()
-
-
-        #Init Generator Weights
-        for p in self.generator.parameters():
-            if p.dim() > 1:
-                xavier_uniform_(p)
-            else:
-                p.data.zero_()  
-
-
-    def weight_sharing(self):
-        self.decoder.embeddings.weight = copy.deepcopy(self.encoder.embeddings.word_embeddings.weight)  
-        self.generator[0].weight = self.dec_embeddings.weight      
-        
