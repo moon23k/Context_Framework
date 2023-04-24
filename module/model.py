@@ -2,6 +2,7 @@ import torch, os
 import torch.nn as nn
 from model.fine import FineModel
 from model.fuse import FuseModel
+from transformers import BertModel
 
 
 
@@ -29,24 +30,32 @@ def print_model_desc(model):
 
 def load_bert(config):
     bert = BertModel.from_pretrained(config.bert_name)
-    bert.embeddings.position_ids = torch.arange(config.model_max_length).expand((1, -1))
-    bert.embeddings.token_type_ids = torch.zeros(config.model_max_length).expand((1, -1))
-    
-    orig_pos_emb = bert.embeddings.position_embeddings.weight
+    bert_embeddings = bert.embeddings
 
-    bert.embeddings.position_embeddings.weight = torch.nn.Parameter(torch.cat((orig_pos_emb, orig_pos_emb)))
-    bert.config.max_position_embeddings = config.model_max_length
+    max_len = config.model_max_length
+    temp_emb = nn.Embedding(max_len, 512)
+    temp_emb.weight.data[:512] = bert.embeddings.position_embeddings.weight.data
+    temp_emb.weight.data[512:] = bert.embeddings.position_embeddings.weight.data[-1][None,:].repeat(max_len-512, 1)
+
+    bert.embeddings.position_embeddings = temp_emb
+
+    bert.config.max_position_embeddings = max_len
+    bert.embeddings.position_ids = torch.arange(max_len).expand((1, -1))
+    bert.embeddings.token_type_ids = torch.zeros(max_len, dtype=torch.long).expand((1, -1))
     
-    return bert
+    return bert, bert_embeddings
     
 
 
 def load_model(config):
+    #Load bert and embeddings
+    bert, bert_embeddings = load_bert(config)
+
     #Load Initial Model
-    if config.stratefy == 'feat':
-        model = FeatModel(config)
+    if config.stratefy == 'fine':
+        model = FineModel(config, bert, bert_embeddings)
     elif config.strategy == 'fuse':
-        model = FuseModel(config)
+        model = FuseModel(config, bert, bert_embeddings)
 
     print(f'{config.strategy.upper()} Model has Loaded')
 

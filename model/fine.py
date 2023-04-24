@@ -1,115 +1,31 @@
-import torch, copy, math
+import torch
 import torch.nn as nn
-from transformers import BertModel
 from collections import namedtuple
-
-
-
-def clones(module, N):
-    return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
-
-
-def attention(query, key, value, mask=None, dropout=None):
-    d_k = query.size(-1)
-    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-    
-    if mask is not None:
-        scores = scores.masked_fill(mask == 0, -1e4)
-    p_attn = scores.softmax(dim=-1)
-
-    if dropout is not None:
-        p_attn = dropout(p_attn)
-    return torch.matmul(p_attn, value), p_attn
-
-
-
-class MultiHeadAttention(nn.Module):
-    def __init__(self, config):
-        super(MultiHeadAttention, self).__init__()
-        assert config.hidden_dim % config.n_heads == 0
-        
-        self.n_heads = config.n_heads
-        self.head_dim = config.hidden_dim // config.n_heads
-        
-        self.attn = None
-        self.dropout = nn.Dropout(config.dropout_ratio)
-        self.linears = clones(nn.Linear(config.hidden_dim, config.hidden_dim), 4)
-
-    def forward(self, query, key, value, mask=None):
-        batch_size = query.size(0)
-        query, key, value = [lin(x).view(batch_size, -1, self.n_heads, self.head_dim).transpose(1, 2)
-                             for lin, x in zip(self.linears, (query, key, value))]
-
-        x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
-        x = (x.transpose(1, 2).contiguous().view(batch_size, -1, self.n_heads * self.head_dim))
-        
-        del query, key, value
-        return self.linears[-1](x)
-
-
-class PositionwiseFeedForward(nn.Module):
-    def __init__(self, config):
-        super(PositionwiseFeedForward, self).__init__()
-        self.w_1 = nn.Linear(config.hidden_dim, config.pff_dim)
-        self.w_2 = nn.Linear(config.pff_dim, config.hidden_dim)
-        self.dropout = nn.Dropout(config.dropout_ratio)
-
-    def forward(self, x):
-        return self.w_2(self.dropout(self.w_1(x).relu()))
-
-
-
-class SublayerConnection(nn.Module):
-    def __init__(self, config):
-        super(SublayerConnection, self).__init__()
-        self.norm = nn.LayerNorm(config.hidden_dim)
-        self.dropout = nn.Dropout(config.dropout_ratio)
-
-    def forward(self, x, sublayer):
-        return x + self.dropout(sublayer(self.norm(x)))
-
-
-class EncoderLayer(nn.Module):
-    def __init__(self, config):
-        super(EncoderLayer, self).__init__()
-        self.self_attn = MultiHeadAttention(config)
-        self.feed_forward = PositionwiseFeedForward(config)
-        self.sublayer = clones(SublayerConnection(config), 2)
-
-    def forward(self, x, mask):
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
-        return self.sublayer[1](x, self.feed_forward)
-
-
-class DecoderLayer(nn.Module):
-    def __init__(self, config):
-        super(DecoderLayer, self).__init__()
-        self.self_attn = MultiHeadAttention(config)
-        self.src_attn = MultiHeadAttention(config)
-        self.feed_forward = PositionwiseFeedForward(config)
-        self.sublayer = clones(SublayerConnection(config), 3)
-
-    def forward(self, x, memory, e_mask, d_mask):
-        m = memory
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, d_mask))
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, e_mask))
-        return self.sublayer[2](x, self.feed_forward)
 
 
 
 class Decoder(nn.Module):
     def __init__(self, config, embeddings):
         super(Decoder, self).__init__()
+        
         self.emb = embeddings
-        self.norm = nn.LayerNorm(config.hidden_dim)
-        self.layers = clones(DecoderLayer(config), config.n_layers)
+        
+        layer = nn.TransformerDecoderLayer(d_model=config.hidden_dim,
+                                           nhead=config.n_heads,
+                                           dim_feedforward=config.pff_dim,
+                                           dropout=config.dropout_ratio,
+                                           batch_first=True, norm_first=True)
+        
+        self.decoder = nn.TransformerDecoder(decoder_layer=layer, 
+                                             num_layers=config.n_layers,
+                                             norm=nn.LayerNorm(config.hidden_dim))
         
 
-    def forward(self, x, memory, e_mask, d_mask):
-        x = self.emb(x)
-        for layer in self.layers:
-            x = layer(x, memory, e_mask, d_mask)
-        return self.norm(x)
+    def forward(self, x, memory, x_sub_mask, x_pad_mask, m_pad_mask):
+        return self.decoder(self.emb(x), memory, 
+                            memory_key_padding_mask=m_pad_mask, 
+                            tgt_key_padding_mask=x_pad_mask, 
+                            tgt_mask=x_sub_mask)
 
 
 
@@ -119,11 +35,10 @@ class FineModel(nn.Module):
         
         self.pad_id = config.pad_id
         self.device = config.device
-        self.max_len = config.max_len
         self.vocab_size = config.vocab_size
 
-        self.encoder, embeddings = self.load_bert(config)
-        self.decoder = Decoder(config, embeddings)
+        self.encoder = bert
+        self.decoder = Decoder(config, bert_embeddings)
         self.generator = nn.Linear(config.hidden_dim, config.vocab_size)
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=config.pad_id, 
@@ -132,56 +47,30 @@ class FineModel(nn.Module):
 
 
 
-    def pad_mask(self, x):
-        return (x != self.pad_id).unsqueeze(1).unsqueeze(2)
+    def forward(self, x, x_seg_mask, y):
+
+        #shift y
+        y_input = y[:, :-1]
+        y_label = y[:, 1:]
 
 
-    def dec_mask(self, x):
-        seq_len = x.size(-1)
-        attn_shape = (1, seq_len, seq_len)
-        subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(torch.uint8) == 0
-        return self.pad_mask(x) & subsequent_mask.to(self.device)
-
-
-    def shift_right(self, labels):
-        shifted = labels.new_zeros(labels.size(0), labels.size(1)-1)
-        shifted = labels[:, :-1].clone()
-        #shifted[:, 0] = self.pad_id #or self.decoder_start_token_id
-        return shifted
-
-
-    def genreate(self, input_ids, attention_mask):
-        batch_size = input_ids.size(0)
+        #create masks
+        x_pad_mask = (x == self.pad_id).to(self.device)
+        y_pad_mask = (y_input == self.pad_id).to(self.device)
+        y_size = y_input.size(1)
+        y_sub_mask = torch.triu(torch.full((y_size, y_size), float('-inf')), diagonal=1).to(self.device)
         
-        e_mask = self.pad_mask(input_ids)
-        memory = self.encoder(input_ids=input_ids, 
-                              attention_mask=attention_mask).last_hidden_state
 
-        preds = torch.zeros(batch_size, self.max_len).to(self.device)
-        for i in range(1, self.max_len):
-            d_mask = self.dec_mask(preds)
-            dec_out = self.decoder(preds, memory, e_mask, d_mask)
-            logits = self.fc_out(dec_out).argmax(-1)
-            
-            if logits.sum() == 0:
-                break
-
-            preds[i] = logits
-
-        return preds.tolist()
-
-
-    def forward(self, input_ids, attention_mask, labels):
-        shifted_labels = self.shift_right(labels)
-        e_mask = self.pad_mask(input_ids)
-        d_mask = self.dec_mask(shifted_labels)
+        memory = self.encoder(input_ids=x, token_type_mask=x_seg_mask, 
+                              attention_mask=x_pad_mask).last_hidden_state
         
-        memory = self.encoder(input_ids=input_ids, 
-                              attention_mask=attention_mask).last_hidden_state
-        d_out = self.decoder(shifted_labels, memory, e_mask, d_mask)
+        d_out = self.decoder(x=y_input, memory=memory, 
+                             x_sub_mask=y_sub_mask, 
+                             x_pad_mask=y_pad_mask, 
+                             m_pad_mask=x_pad_mask)
         
         logits = self.generator(d_out)
         loss = self.criterion(logits.view(-1, self.vocab_size), 
-                              labels[:, 1:].contiguous().view(-1))
+                              y_label.contiguous().view(-1))
 
         return self.outputs(logits, loss)

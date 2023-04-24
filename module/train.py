@@ -11,10 +11,12 @@ class Trainer:
         self.model = model
         self.clip = config.clip
         self.device = config.device
-        
         self.strategy = config.strategy
         self.n_epochs = config.n_epochs
-        self.output_dim = config.output_dim
+        self.vocab_size = config.vocab_size
+
+        self.scaler = torch.cuda.amp.GradScaler()
+        self.iters_to_accumulate = config.iters_to_accumulate
 
         self.early_stop = config.early_stop
         self.patience = config.patience
@@ -22,14 +24,14 @@ class Trainer:
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
 
+        self.bert_optimizer = optim.AdamW(self.model.parameters(), lr=config.learning_rate * 0.1)
         self.optimizer = optim.AdamW(self.model.parameters(), lr=config.learning_rate)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min')
         
         self.ckpt_path = config.ckpt_path
         self.record_path = f"ckpt/{self.model_name}.json"
-        self.record_keys = ['epoch', 'train_loss', 'train_ppl',
-                            'valid_loss', 'valid_ppl', 
-                            'learning_rate', 'train_time']
+        self.record_keys = ['epoch', 'train_loss', 'train_ppl', 'valid_loss', 
+                            'valid_ppl', 'learning_rate', 'train_time']
 
 
     def print_epoch(self, record_dict):
@@ -87,15 +89,11 @@ class Trainer:
         tot_len = len(self.train_dataloader)
 
         for idx, batch in enumerate(self.train_dataloader):
-            input_ids = batch['input_ids'].to(self.device) 
-            token_type_ids = batch['token_type_ids'].to(self.device)
-            attention_mask = batch['attention_mask'].to(self.device)
-            labels = batch['labels'].to(self.device)
+            x = batch['input_ids'].to(self.device) 
+            x_seg_mask = batch['token_type_ids'].to(self.device)
+            y = batch['labels'].to(self.device)
 
-            loss = self.model(input_ids=input_ids, 
-                              token_type_ids=token_type_ids, 
-                              attention_mask=attention_mask, 
-                              labels=labels).loss
+            loss = self.model(x, x_seg_mask, y).loss
             loss.backward()
             nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip)
             
@@ -117,16 +115,11 @@ class Trainer:
         
         with torch.no_grad():
             for batch in self.valid_dataloader:                
+                x = batch['input_ids'].to(self.device) 
+                x_seg_mask = batch['token_type_ids'].to(self.device)
+                y = batch['labels'].to(self.device)
 
-                input_ids = batch['input_ids'].to(self.device) 
-                token_type_ids = batch['token_type_ids'].to(self.device)
-                attention_mask = batch['attention_mask'].to(self.device)
-                labels = batch['labels'].to(self.device)
-
-                loss = self.model(input_ids=input_ids, 
-                                  token_type_ids=token_type_ids, 
-                                  attention_mask=attention_mask, 
-                                  labels=labels).loss
+                loss = self.model(x, x_seg_mask, y).loss
 
         
         epoch_loss = round(epoch_loss / tot_len, 3)

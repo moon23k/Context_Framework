@@ -1,4 +1,4 @@
-import os, re, json, nltk, torch
+import os, json, nltk
 from datasets import load_dataset
 from transformers import BertTokenizerFast
 

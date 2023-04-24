@@ -33,7 +33,7 @@ class Config(object):
         self.bert_dim = 768
         self.hidden_dim = 512
         self.dropout_ratio = 0.1
-        self.max_len = 3000
+        self.model_max_length = 1024
         self.act = 'gelu'
         self.norm_first = True
         self.batch_first = True
@@ -50,19 +50,6 @@ class Config(object):
         for attribute, value in self.__dict__.items():
             print(f"* {attribute}: {value}")
 
-
-def load_bert(self, config):
-    bert = BertModel.from_pretrained(config.bert_name)
-    bert_embeddings = copy.deepcopy(bert.embeddings)
-
-    bert.embeddings.position_ids = torch.arange(config.model_max_length).expand((1, -1))
-    bert.embeddings.token_type_ids = torch.zeros(config.model_max_length).expand((1, -1))
-    
-    pos_weight = bert.embeddings.position_embeddings.weight
-    bert.embeddings.position_embeddings.weight = torch.nn.Parameter(torch.cat((pos_weight, pos_weight)))
-    bert.config.max_position_embeddings = config.model_max_length
-    
-    return bert, bert_embeddings
 
 
 def inference(config, model, tokenizer):

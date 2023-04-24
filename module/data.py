@@ -21,12 +21,10 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
         ids = self.data[idx]['input_ids']
         seg = self.data[idx]['token_type_ids']
-        mask = [1 for _ in range(len(ids))]
         label = self.data[idx]['labels']
         
         return {'input_ids': ids,
                 'token_type_ids': seg,
-                'attention_mask': mask,
                 'labels': label}
 
 
@@ -36,17 +34,15 @@ class Collator(object):
         self.pad_id = pad_id
 
     def __call__(self, batch):
-        ids_batch, seg_batch, mask_batch, label_batch = [], [], [], []
+        ids_batch, seg_batch, label_batch = [], [], []
         
         for elem in batch:
             ids_batch.append(torch.LongTensor(elem['input_ids'])) 
             seg_batch.append(torch.LongTensor(elem['token_type_ids']))
-            mask_batch.append(torch.LongTensor(elem['attention_mask']))
             label_batch.append(torch.LongTensor(elem['labels']))
 
         return {'input_ids': self.pad_batch(ids_batch),
                 'token_type_ids': self.pad_batch(seg_batch),
-                'attention_mask': self.pad_batch(mask_batch),
                 'labels': self.pad_batch(label_batch)}
 
     def pad_batch(self, batch):
