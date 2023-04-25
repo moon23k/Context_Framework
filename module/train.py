@@ -54,7 +54,10 @@ class Trainer:
 
 
     def train(self):
-        best_loss, records = float('inf'), []
+        records = []
+        prev_loss, best_loss = float('inf'), float('inf')
+        patience = self.patience
+
         for epoch in range(1, self.n_epochs + 1):
             start_time = time.time()
 
@@ -76,6 +79,20 @@ class Trainer:
                             'model_state_dict': self.model.state_dict(),
                             'optimizer_state_dict': self.optimizer.state_dict()},
                             self.ckpt_path)
+
+            #Early Stopping Process
+            if self.early_stop:
+                if prev_loss > val_loss:
+                    patience = self.patience
+            
+                else:
+                    patience -= 1
+                    if not patience:
+                        print('--- Training Ealry Stopped ---\n')
+                        break
+
+                prev_loss = val_loss
+
             
         #save train_records
         with open(self.record_path, 'w') as fp:
@@ -89,21 +106,33 @@ class Trainer:
         tot_len = len(self.train_dataloader)
 
         for idx, batch in enumerate(self.train_dataloader):
+            idx += 1
+
             x = batch['input_ids'].to(self.device) 
             x_seg_mask = batch['token_type_ids'].to(self.device)
             y = batch['labels'].to(self.device)
 
-            loss = self.model(x, x_seg_mask, y).loss
-            loss.backward()
-            nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip)
+            with torch.autocast(device_type=self.device_type, dtype=torch.float16):
+                loss = self.model(x, x_seg_mask, y).loss
+                loss /= self.iters_to_accumulate
             
-            self.optimizer.step()
-            self.optimizer.zero_grad()
+            self.scaler.sclae(loss).backward()
+
+            if (idx % self.iters_to_accumulate == 0) or (idx == tot_len):
+                #Gradient Clipping
+                self.scaler.unscale_(self.optimizer)
+                nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.clip)
+                
+                #Gradient Update & Scaler Update
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad()
 
             epoch_loss += loss.item()
         
         epoch_loss = round(epoch_loss / tot_len, 3)
         epoch_ppl = round(math.exp(epoch_loss), 3)    
+
         return epoch_loss, epoch_ppl
         
     
@@ -119,9 +148,12 @@ class Trainer:
                 x_seg_mask = batch['token_type_ids'].to(self.device)
                 y = batch['labels'].to(self.device)
 
-                loss = self.model(x, x_seg_mask, y).loss
+                with torch.autocast(device_type=self.device_type, dtype=torch.float16):
+                    loss = self.model(x, x_seg_mask, y).loss
 
+                epoch_loss += loss.item()
         
         epoch_loss = round(epoch_loss / tot_len, 3)
-        epoch_ppl = round(math.exp(epoch_loss), 3)        
+        epoch_ppl = round(math.exp(epoch_loss), 3)
+                
         return epoch_loss, epoch_ppl
