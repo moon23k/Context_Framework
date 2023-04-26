@@ -1,4 +1,4 @@
-import torch
+import copy, torch
 import torch.nn as nn
 from collections import namedtuple
 
@@ -8,7 +8,7 @@ class Decoder(nn.Module):
     def __init__(self, config, embeddings):
         super(Decoder, self).__init__()
         
-        self.emb = embeddings
+        self.embeddings = embeddings
         
         layer = nn.TransformerDecoderLayer(d_model=config.hidden_dim,
                                            nhead=config.n_heads,
@@ -22,7 +22,7 @@ class Decoder(nn.Module):
         
 
     def forward(self, x, memory, x_sub_mask, x_pad_mask, m_pad_mask):
-        return self.decoder(self.emb(x), memory, 
+        return self.decoder(self.embeddings(x), memory, 
                             memory_key_padding_mask=m_pad_mask, 
                             tgt_key_padding_mask=x_pad_mask, 
                             tgt_mask=x_sub_mask)
@@ -38,7 +38,7 @@ class FineModel(nn.Module):
         self.vocab_size = config.vocab_size
 
         self.encoder = bert
-        self.decoder = Decoder(config, bert_embeddings)
+        self.decoder = Decoder(config, copy.deepcopy(bert_embeddings))
         self.generator = nn.Linear(config.hidden_dim, config.vocab_size)
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=config.pad_id, 
@@ -61,7 +61,7 @@ class FineModel(nn.Module):
         y_sub_mask = torch.triu(torch.full((y_size, y_size), float('-inf')), diagonal=1).to(self.device)
         
 
-        memory = self.encoder(input_ids=x, token_type_mask=x_seg_mask, 
+        memory = self.encoder(input_ids=x, token_type_ids=x_seg_mask, 
                               attention_mask=x_pad_mask).last_hidden_state
         
         d_out = self.decoder(x=y_input, memory=memory, 

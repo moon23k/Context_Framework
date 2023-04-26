@@ -19,7 +19,7 @@ class Config(object):
         self.clip = 1
         self.n_epochs = 10
         self.batch_size = 32
-        self.learning_rate = 5e-4
+        self.lr = 5e-4
         self.iters_to_accumulate = 4
         self.ckpt_path = f"ckpt/{self.strategy}.pt"
 
@@ -80,12 +80,8 @@ def main(args):
     config = Config(args)
     tokenizer = BertTokenizerFast.from_pretrained(config.bert_name)
     config.pad_id = tokenizer.pad_token_id
-    
-    if config.strategy != 'feat':
-        bert = BertModel.from_pretrained(config.bert_name)
-        model = load_model(config, bert)
-    else:
-        model = load_model(config)
+    config.vocab_size = tokenizer.vocab_size
+    model = load_model(config)
 
 
     if config.mode == 'train': 

@@ -24,12 +24,22 @@ class Trainer:
         self.train_dataloader = train_dataloader
         self.valid_dataloader = valid_dataloader
 
-        self.bert_optimizer = optim.AdamW(self.model.parameters(), lr=config.learning_rate * 0.1)
-        self.optimizer = optim.AdamW(self.model.parameters(), lr=config.learning_rate)
+        if self.strategy == 'fine':
+            self.optimizer = optim.AdamW([{'params': model.encoder.parameters(), 'lr': config.lr * 0.1},
+                                          {'params': model.decoder.parameters()},
+                                          {'params': model.generator.parameters()}], lr=config.lr)
+        elif self.strategy == 'fuse':
+            self.optimizer = optim.AdamW([{'params': model.bert.parameters(), 'lr': config.lr * 0.1},
+                                          {'params': model.encoder.parameters()},
+                                          {'params': model.decoder.parameters()},
+                                          {'params': model.generator.parameters()}], lr=config.lr)
+
+
+
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min')
         
         self.ckpt_path = config.ckpt_path
-        self.record_path = f"ckpt/{self.model_name}.json"
+        self.record_path = f"ckpt/{self.strategy}.json"
         self.record_keys = ['epoch', 'train_loss', 'train_ppl', 'valid_loss', 
                             'valid_ppl', 'learning_rate', 'train_time']
 
@@ -112,11 +122,11 @@ class Trainer:
             x_seg_mask = batch['token_type_ids'].to(self.device)
             y = batch['labels'].to(self.device)
 
-            with torch.autocast(device_type=self.device_type, dtype=torch.float16):
+            with torch.autocast(device_type=self.device.type, dtype=torch.float16):
                 loss = self.model(x, x_seg_mask, y).loss
                 loss /= self.iters_to_accumulate
             
-            self.scaler.sclae(loss).backward()
+            self.scaler.scale(loss).backward()
 
             if (idx % self.iters_to_accumulate == 0) or (idx == tot_len):
                 #Gradient Clipping
@@ -148,12 +158,12 @@ class Trainer:
                 x_seg_mask = batch['token_type_ids'].to(self.device)
                 y = batch['labels'].to(self.device)
 
-                with torch.autocast(device_type=self.device_type, dtype=torch.float16):
+                with torch.autocast(device_type=self.device.type, dtype=torch.float16):
                     loss = self.model(x, x_seg_mask, y).loss
 
                 epoch_loss += loss.item()
         
         epoch_loss = round(epoch_loss / tot_len, 3)
         epoch_ppl = round(math.exp(epoch_loss), 3)
-                
+
         return epoch_loss, epoch_ppl

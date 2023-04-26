@@ -6,6 +6,18 @@ from transformers import BertModel
 
 
 
+def init_weights(model):
+    if isinstance(model, FineModel):
+        except_list = ['encoder', 'embeddings', 'norm', 'bias']
+    elif isinstance(model, FuseModel):
+        except_list = ['bert', 'embeddings', 'norm', 'bias']
+    
+    for name, param in model.named_parameters():
+        if any([x in name for x in except_list]):
+            continue
+        nn.init.xavier_uniform_(param)    
+
+
 def print_model_desc(model):
     def count_params(model):
         params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -52,11 +64,12 @@ def load_model(config):
     bert, bert_embeddings = load_bert(config)
 
     #Load Initial Model
-    if config.stratefy == 'fine':
+    if config.strategy == 'fine':
         model = FineModel(config, bert, bert_embeddings)
     elif config.strategy == 'fuse':
         model = FuseModel(config, bert, bert_embeddings)
 
+    init_weights(model)
     print(f'{config.strategy.upper()} Model has Loaded')
 
     if config.mode != 'train':

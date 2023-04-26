@@ -1,4 +1,4 @@
-import torch
+import copy, torch
 import torch.nn as nn
 import torch.nn.functional as F
 from collections import namedtuple
@@ -84,7 +84,7 @@ class DecoderLayer(nn.Module):
 
     def forward(self, x, bert_out, memory, x_sub_mask, x_pad_mask, m_pad_mask):
         self_attn_out = self.self_attn(x, x, x, x_pad_mask, x_sub_mask)
-        x += self_attn_out
+        x = x + self_attn_out
 
         bert_attn_out = self.bert_attn(x, bert_out, bert_out, m_pad_mask)
         self_attn_out = self.self_attn(x, memory, memory, m_pad_mask)
@@ -134,8 +134,8 @@ class FuseModel(nn.Module):
         self.vocab_size = config.vocab_size
 
         self.bert = bert
-        self.encoder = Encoder(config, bert_embeddings)
-        self.decoder = Decoder(config, bert_embeddings)
+        self.encoder = Encoder(config, copy.deepcopy(bert_embeddings))
+        self.decoder = Decoder(config, copy.deepcopy(bert_embeddings))
         self.generator = nn.Linear(config.hidden_dim, config.vocab_size)
 
         self.criterion = nn.CrossEntropyLoss(ignore_index=config.pad_id, 
@@ -158,7 +158,7 @@ class FuseModel(nn.Module):
         y_size = y_input.size(1)
         y_sub_mask = torch.triu(torch.full((y_size, y_size), float('-inf')), diagonal=1).to(self.device)
 
-        bert_out = self.bert(input_ids=x, token_type_mask=x_seg_mask, 
+        bert_out = self.bert(input_ids=x, token_type_ids=x_seg_mask, 
                              attention_mask=x_pad_mask).last_hidden_state        
 
         memory = self.encoder(x, bert_out, x_pad_mask)
