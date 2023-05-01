@@ -98,7 +98,7 @@ def main(args):
         return
     
     elif config.mode == 'inference':
-        summarizer = inference(config, model, tokenizer)
+        inference(config, model, tokenizer)
         return
     
 

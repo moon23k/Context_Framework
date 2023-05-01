@@ -75,7 +75,7 @@ def load_model(config):
     if config.mode != 'train':
         ckpt = config.ckpt
         assert os.path.exists(ckpt)
-        model_state = torch.torch.load(ckpt, map_location=config.device)['model_state_dict']
+        model_state = torch.load(ckpt, map_location=config.device)['model_state_dict']
         model.load_state_dict(model_state)
         print(f"Model States has loaded from {ckpt}")
 
