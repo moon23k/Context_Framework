@@ -79,6 +79,7 @@ def main(args):
     set_seed(42)
     config = Config(args)
     tokenizer = BertTokenizerFast.from_pretrained(config.bert_name)
+    
     config.pad_id = tokenizer.pad_token_id
     config.vocab_size = tokenizer.vocab_size
     model = load_model(config)
@@ -111,7 +112,7 @@ if __name__ == '__main__':
     
     args = parser.parse_args()
     assert args.mode in ['train', 'test', 'inference']
-    assert args.strategy in ['fine', 'feat', 'fuse']
+    assert args.strategy in ['fine', 'fuse']
 
     if args.task == 'inference':
         import nltk

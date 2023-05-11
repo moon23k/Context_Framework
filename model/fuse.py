@@ -153,8 +153,8 @@ class FuseModel(nn.Module):
 
 
         #create masks
-        x_pad_mask = (x == self.pad_id).to(self.device)
-        y_pad_mask = (y_input == self.pad_id).to(self.device)
+        x_pad_mask = (x != self.pad_id).to(self.device)
+        y_pad_mask = (y_input != self.pad_id).to(self.device)
         y_size = y_input.size(1)
         y_sub_mask = torch.triu(torch.full((y_size, y_size), float('-inf')), diagonal=1).to(self.device)
 

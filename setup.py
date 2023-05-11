@@ -36,8 +36,8 @@ def process_data(orig_data, tokenizer):
                 temp_segs.extend([1 for _ in range(_len)])
 
         processed.append({"input_ids": temp_ids,
-                         "token_type_ids": temp_segs,
-                         'labels': tokenizer(trg).input_ids})
+                          "token_type_ids": temp_segs,
+                          "labels": tokenizer(trg).input_ids})
         
         cnt += 1
         if cnt == volumn:
